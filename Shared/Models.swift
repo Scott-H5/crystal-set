@@ -1,6 +1,7 @@
 // Models.swift
 //
-// The app's data and the decisions it makes. This file has no screens in it.
+// The app's data and the decisions it makes. This file has no screens in it,
+// and both the Mac and iPhone versions use it.
 // It holds:
 //   - Station: what the app knows about one radio station.
 //   - RadioBrowserClient: talks to the free Radio Browser station directory
@@ -14,10 +15,17 @@
 // See docs/HOW-IT-WORKS.md for a guided tour of the whole app.
 
 // "import" brings in code Apple provides. Foundation has the basics
-// (text, dates, files, networking). AppKit is the Mac's user interface
-// toolkit; it's needed here only for VoiceOver announcements.
+// (text, dates, files, networking). AppKit (Mac) and UIKit (iPhone) are
+// each platform's user interface toolkit; they're needed here only for
+// VoiceOver announcements.
 import Foundation
+// `#if os(macOS)` includes the lines up to `#else` only when building for
+// the Mac; the lines after `#else` are used for the iPhone instead.
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 
 // MARK: - Station
 
@@ -203,6 +211,7 @@ actor RadioBrowserClient {
 /// work must happen. If VoiceOver is off, nothing happens.
 @MainActor
 func announce(_ text: String) {
+    #if os(macOS)
     NSAccessibility.post(
         element: NSApp as Any,
         notification: .announcementRequested,
@@ -212,6 +221,14 @@ func announce(_ text: String) {
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ]
     )
+    #else
+    // The iPhone's version. The attribute marks it high priority, as above.
+    let message = NSAttributedString(
+        string: text,
+        attributes: [.accessibilitySpeechAnnouncementPriority: UIAccessibilityPriority.high]
+    )
+    UIAccessibility.post(notification: .announcement, argument: message)
+    #endif
 }
 
 // MARK: - App model
@@ -326,6 +343,12 @@ final class AppModel: ObservableObject {
 
     /// Plays a station, and tells Radio Browser it was played.
     func play(_ station: Station) {
+        // Select the station in the list it was played from, so Next and
+        // Previous Station step from it. (On iPhone you tap a row to play it
+        // without selecting it first.)
+        if currentList.contains(where: { $0.id == station.id }) {
+            currentSelection = station.id
+        }
         player.play(station)
         if station.isFromRadioBrowser {
             // `Task { }` runs work in the background so the app doesn't wait for it.

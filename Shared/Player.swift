@@ -8,7 +8,8 @@
 //     actual stream inside them.
 //
 // The Player knows nothing about windows or buttons. The screens watch it
-// and call its functions, such as play(_:), pause() and stop().
+// and call its functions, such as play(_:), pause() and stop(). Both the Mac
+// and iPhone versions use it; the few differences are marked `#if os(...)`.
 
 // AVFoundation is Apple's audio and video toolkit; it provides AVPlayer,
 // which does the actual streaming. Combine lets code watch values change.
@@ -52,9 +53,16 @@ final class Player: ObservableObject {
     @Published private(set) var streamTitle = ""
     // The volume setting, from 0 (silent) to 1 (full). 0.8 is 80%.
     // `didSet` passes every change straight on to the audio player.
+    // On iPhone it starts at full, since the phone's volume buttons set the level.
+    #if os(iOS)
+    @Published var volume: Double = 1.0 {
+        didSet { avPlayer.volume = Float(volume) }
+    }
+    #else
     @Published var volume: Double = 0.8 {
         didSet { avPlayer.volume = Float(volume) }
     }
+    #endif
 
     // Apple's player object, which does the streaming.
     private let avPlayer = AVPlayer()
@@ -66,6 +74,12 @@ final class Player: ObservableObject {
     private var loadTask: Task<Void, Never>?
 
     init() {
+        #if os(iOS)
+        // Tell iOS this app plays audio, so it keeps playing when the screen
+        // locks or you switch apps, and isn't silenced by the ring/silent switch.
+        // (Info.plist also lists "audio" under background modes.)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        #endif
         avPlayer.volume = Float(volume)
         // Watch AVPlayer's own status (playing, waiting for data, paused) and
         // call timeControlChanged(_:) each time it changes.
@@ -297,6 +311,10 @@ final class Player: ObservableObject {
 
     /// Hands a real stream address to AVPlayer and starts it.
     private func start(_ url: URL) {
+        #if os(iOS)
+        // Claim the iPhone's audio, pausing other apps' audio.
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         let item = AVPlayerItem(url: url)
 
         // Listen for show titles sent by the stream.
@@ -351,8 +369,15 @@ final class Player: ObservableObject {
             // The stream ran short of data and is waiting for more (buffering).
             if state == .playing { state = .connecting }
         case .paused:
-            break
-        // Covers any status a future macOS might add.
+            // Something else paused the audio, such as a phone call, Siri,
+            // another app starting to play, or headphones being unplugged.
+            // (Crystal Set's own pause() changes `state` first, so this
+            // doesn't affect it.)
+            if state == .playing || state == .connecting {
+                state = .paused
+                updateNowPlayingInfo()
+            }
+        // Covers any status a future macOS or iOS might add.
         @unknown default:
             break
         }
@@ -388,7 +413,10 @@ final class Player: ObservableObject {
         let center = MPNowPlayingInfoCenter.default()
         guard let station, state != .stopped else {
             center.nowPlayingInfo = nil
+            #if os(macOS)
+            // Only the Mac needs to be told this; the iPhone works it out itself.
             center.playbackState = .stopped
+            #endif
             return
         }
         // Show the show title when there is one, with the station as the "artist".
@@ -399,7 +427,9 @@ final class Player: ObservableObject {
         ]
         if !streamTitle.isEmpty { info[MPMediaItemPropertyAlbumTitle] = station.name }
         center.nowPlayingInfo = info
+        #if os(macOS)
         center.playbackState = state == .playing ? .playing : .paused
+        #endif
     }
 }
 

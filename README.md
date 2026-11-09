@@ -1,6 +1,6 @@
 # Crystal Set
 
-A small, VoiceOver-friendly macOS app for listening to internet radio. It was built for old time radio (OTR) — mysteries, westerns, comedies and science fiction from radio's golden age — but it plays any internet radio stream. It's named after the crystal set, the simple home-built radio of the early broadcast era.
+A small, VoiceOver-friendly internet radio app for the Mac and iPhone. It was built for old time radio (OTR) — mysteries, westerns, comedies and science fiction from radio's golden age — but it plays any internet radio stream. It's named after the crystal set, the simple home-built radio of the early broadcast era.
 
 - Search the free [Radio Browser](https://www.radio-browser.info) station directory by tag or name
 - Keep a reorderable list of favorite stations
@@ -8,20 +8,30 @@ A small, VoiceOver-friendly macOS app for listening to internet radio. It was bu
 - Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export, and export them as JSON
 - Shows the current show title when the stream sends one
 - Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
-- Works with the keyboard's media keys and Control Center's Now Playing
+- Works with the keyboard's media keys, the Lock Screen, and Control Center's Now Playing
+
+The Mac and iPhone versions share their stations, search, playback, sleep timer, and import and export code; only the screens differ. Favorites don't sync between them yet, but you can export them on one and import them on the other.
 
 ## Accessibility
 
-Crystal Set uses only standard macOS controls: a tab view, tables, buttons, text fields, a picker, and a slider. Nothing is custom-drawn. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, and changes to favorites.
+Crystal Set uses only standard controls: tabs, tables and lists, buttons, text fields, pickers, and a slider. Nothing is custom-drawn. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, sleep timer changes, and changes to favorites.
+
+On iPhone, with VoiceOver:
+
+- Double-tap a station to play it.
+- The Actions rotor (swipe up or down) on a station offers Add to or Remove from Favorites, Stop (on the playing station), and Move Up and Move Down (in Favorites).
+- Magic Tap (a two-finger double-tap) pauses and resumes from anywhere in the app.
+- The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Change Sleep Timer.
+- The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
 
 ## Requirements
 
-- macOS 13 Ventura or later
-- Xcode or the Xcode Command Line Tools (for `swiftc`)
+- **Mac version:** macOS 13 Ventura or later, and Xcode or the Xcode Command Line Tools (for `swiftc`).
+- **iPhone version:** iOS 17 or later; Xcode, signed in to your Apple ID (Xcode > Settings > Accounts); [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`); and an iPhone with Developer Mode turned on.
 
-## Build
+## Build the Mac version
 
-There is no Xcode project. The build script compiles the sources with `swiftc` and produces an ad hoc signed app bundle. It works from any folder.
+There is no Xcode project for the Mac version. The build script compiles the sources with `swiftc` and produces an ad hoc signed app bundle. It works from any folder.
 
 To build and install in one step:
 
@@ -40,6 +50,28 @@ bash ~/Projects/crystal-set/build.sh
 The app is written to `build/Crystal Set.app` in the project folder.
 
 (Adjust the path if you cloned the project somewhere other than `~/Projects/crystal-set`.)
+
+## Build the iPhone version
+
+The iPhone version is described in `project.yml`. The script `ios.sh` turns that into an Xcode project with XcodeGen, builds it with `xcodebuild`, and installs it on a connected iPhone. You don't need to open Xcode.
+
+1. Put your Apple team ID in a file named `ios-team.txt` in the project folder. It's the 10-character ID shown in Xcode > Settings > Accounts, or at [developer.apple.com/account](https://developer.apple.com/account). The file isn't uploaded to GitHub, so everyone uses their own.
+2. Connect your iPhone with a cable and unlock it. The first time, tap Trust on the iPhone, then turn on Developer Mode (Settings > Privacy & Security > Developer Mode) and let it restart.
+3. Build and install:
+
+   ```bash
+   bash ~/Projects/crystal-set/ios.sh install
+   ```
+
+   To build without installing:
+
+   ```bash
+   bash ~/Projects/crystal-set/ios.sh
+   ```
+
+4. With a free Apple ID (a "Personal Team"), the first time you open the app iOS says the developer isn't trusted. Go to Settings > General > VPN & Device Management, choose your Apple ID under Developer App, and choose Trust.
+
+With a free Personal Team, an installed app stops opening after 7 days. Run `ios.sh install` again to renew it; your favorites are kept. A paid Apple Developer Program membership extends this to a year and adds TestFlight.
 
 ## Keyboard shortcuts
 
@@ -110,12 +142,18 @@ New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a gui
 
 | File | Contents |
 | --- | --- |
-| `Sources/CrystalSetApp.swift` | App entry point and menu commands |
-| `Sources/ContentView.swift` | Window, Favorites and Search tabs, Now Playing bar, Add Station sheet |
-| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
-| `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
-| `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
-| `Sources/ImportExport.swift` | Importing and exporting favorites as JSON |
+| `Shared/Models.swift` | Station model, Radio Browser client, app state and actions, VoiceOver announcements (Mac and iPhone) |
+| `Shared/Player.swift` | Playback, stream titles, sleep timer, playlist links, media keys and Now Playing (Mac and iPhone) |
+| `Shared/ImportExport.swift` | Importing and exporting favorites as JSON (Mac and iPhone) |
+| `macOS/CrystalSetApp.swift` | Mac app entry point and menu commands |
+| `macOS/ContentView.swift` | Mac window: Favorites and Search tabs, Now Playing bar, Add Station sheet |
+| `macOS/StationTable.swift` | Mac station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
+| `macOS/Info.plist` | Mac app settings (name, ID, allowing http streams) |
+| `iOS/CrystalSetPhoneApp.swift` | iPhone app entry point |
+| `iOS/PhoneViews.swift` | iPhone screens: Favorites, Search, Now Playing, station rows with VoiceOver actions, Magic Tap |
+| `iOS/Info.plist` | iPhone app settings, generated from `project.yml` |
+| `build.sh` | Builds and installs the Mac version |
+| `project.yml`, `ios.sh` | Describe, build and install the iPhone version |
 
 ## License
 

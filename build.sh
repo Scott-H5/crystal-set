@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds "Crystal Set.app" into the build folder.
+# Builds the Mac version, "Crystal Set.app", into the build folder.
+# (The iPhone version is built with ios.sh.)
 #
 #   bash build.sh            build only
 #   bash build.sh install    build, then replace the copy in /Applications
@@ -23,11 +24,11 @@ esac
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp Info.plist "$APP/Contents/Info.plist"
+cp macOS/Info.plist "$APP/Contents/Info.plist"
 
 xcrun swiftc -O -swift-version 5 -parse-as-library \
   -target "${ARCH}-apple-macos13.0" -sdk "$SDK" \
-  Sources/*.swift \
+  Shared/*.swift macOS/*.swift \
   -o "$APP/Contents/MacOS/CrystalSet"
 
 codesign --force --sign - "$APP" 2>/dev/null
