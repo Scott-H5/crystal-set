@@ -22,7 +22,7 @@ struct ContentView: View {
 
             NowPlayingBar(player: model.player)
         }
-        .frame(minWidth: 680, minHeight: 460)
+        .frame(minWidth: 780, minHeight: 460)
         .sheet(isPresented: $model.showingAddSheet) {
             AddStationSheet()
                 .environmentObject(model)
@@ -153,6 +153,7 @@ struct NowPlayingBar: View {
     private var statusLine: String {
         var parts = [player.state.description]
         if !player.streamTitle.isEmpty { parts.append(player.streamTitle) }
+        if let sleep = player.sleepTimerDescription { parts.append(sleep) }
         return parts.joined(separator: " — ")
     }
 
@@ -180,6 +181,17 @@ struct NowPlayingBar: View {
 
             Button("Stop") { player.stop() }
                 .disabled(!player.isActive)
+
+            Picker("Sleep timer", selection: Binding(
+                get: { player.sleepTimerMinutes },
+                set: { player.setSleepTimer(minutes: $0) }
+            )) {
+                Text("Off").tag(0)
+                ForEach(Player.sleepTimerChoices, id: \.self) { minutes in
+                    Text("\(minutes) minutes").tag(minutes)
+                }
+            }
+            .fixedSize()
 
             Slider(value: $player.volume, in: 0...1, step: 0.05) {
                 Text("Volume")

@@ -11,7 +11,7 @@ struct CrystalSetApp: App {
                 .environmentObject(model)
         }
         .commands {
-            StationCommands(model: model)
+            StationCommands(model: model, player: model.player)
         }
     }
 }
@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct StationCommands: Commands {
     @ObservedObject var model: AppModel
+    @ObservedObject var player: Player
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -71,6 +72,17 @@ struct StationCommands: Commands {
 
             Divider()
 
+            Picker("Sleep Timer", selection: sleepTimerBinding) {
+                Text("Off").tag(0)
+                ForEach(Player.sleepTimerChoices, id: \.self) { minutes in
+                    Text("\(minutes) Minutes").tag(minutes)
+                }
+            }
+            Button("Change Sleep Timer") { player.cycleSleepTimer() }
+                .keyboardShortcut("t")
+
+            Divider()
+
             Button("What's Playing") { model.player.announceStatus() }
                 .keyboardShortcut("i")
             Button("Show Current Station") { model.showCurrentStation() }
@@ -100,6 +112,11 @@ struct StationCommands: Commands {
             }
             .keyboardShortcut("f")
         }
+    }
+
+    private var sleepTimerBinding: Binding<Int> {
+        Binding(get: { player.sleepTimerMinutes },
+                set: { player.setSleepTimer(minutes: $0) })
     }
 
     /// While typing in a text field, Command-arrow keys move the text cursor,

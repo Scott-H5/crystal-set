@@ -7,6 +7,7 @@ A small, VoiceOver-friendly macOS app for listening to internet radio. It was bu
 - Add any stream by its address, including `.pls` and `.m3u` playlist links
 - Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export
 - Shows the current show title when the stream sends one
+- Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
 - Works with the keyboard's media keys and Control Center's Now Playing
 
 ## Accessibility
@@ -63,7 +64,8 @@ Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command
 | Reconnect to the current stream | Command-R |
 | Next / previous station in the current list | Command-Right Arrow / Command-Left Arrow |
 | Volume up / down (5% steps) | Command-Up Arrow / Command-Down Arrow |
-| Speak what's playing | Command-I |
+| Change sleep timer (Off, 15, 30, 45, 60, 90 minutes) | Command-T |
+| Speak what's playing, including sleep time left | Command-I |
 | Select the playing station in its list | Command-L |
 
 The Command-arrow shortcuts are turned off while you're typing in a text field, so they still move the text cursor there.
@@ -78,6 +80,10 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | Find stations (focus search field) | Command-F |
 | Add station by address | Command-N |
 | Import favorites | Command-Shift-I |
+
+## Sleep timer
+
+Choose a length from Controls > Sleep Timer, from the Sleep timer pop-up button next to the volume slider, or press Command-T to step through the choices. Crystal Set says the new setting each time. The sound fades out over the last 30 seconds, then playback stops. Command-I includes the time left, and pressing Stop turns the timer off.
 
 ## Importing favorites
 

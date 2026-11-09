@@ -107,27 +107,129 @@ final class Player: ObservableObject {
         if state == .playing || state == .connecting { pause() } else { resume() }
     }
 
+    /// Stops playback. Also turns off the sleep timer, since there's nothing left to stop.
     func stop() {
+        let hadTimer = sleepTimerMinutes > 0
+        cancelSleepTimer()
+        let wasPlaying = station != nil
+        stopPlayback()
+        if wasPlaying { announce(hadTimer ? "Stopped. Sleep timer off" : "Stopped") }
+    }
+
+    private func stopPlayback() {
         loadTask?.cancel()
         avPlayer.pause()
         avPlayer.replaceCurrentItem(with: nil)
         itemObserver = nil
         metadataDelegate = nil
-        if station != nil { announce("Stopped") }
         state = .stopped
         streamTitle = ""
         updateNowPlayingInfo()
     }
 
-    /// Speaks the current station, state, and show title for VoiceOver users.
+    /// Speaks the current station, state, show title, and sleep timer for VoiceOver users.
     func announceStatus() {
-        guard let station else {
-            announce("Nothing playing")
+        var text: String
+        if let station {
+            text = "\(station.name). \(state.description)"
+            if !streamTitle.isEmpty { text += ". \(streamTitle)" }
+        } else {
+            text = "Nothing playing"
+        }
+        if let sleepTimerDescription { text += ". \(sleepTimerDescription)" }
+        announce(text)
+    }
+
+    // MARK: Sleep timer
+
+    /// Sleep timer lengths offered in menus, in minutes.
+    static let sleepTimerChoices = [15, 30, 45, 60, 90]
+
+    /// Length of the running sleep timer in minutes, or 0 when it's off.
+    @Published private(set) var sleepTimerMinutes = 0
+    /// Whole minutes left, rounded up. Changes at most once a minute, so
+    /// VoiceOver isn't interrupted by a ticking countdown. Nil when off.
+    @Published private(set) var sleepMinutesLeft: Int?
+    /// The sound fades out over this many seconds before playback stops.
+    var sleepFadeDuration: TimeInterval = 30
+    /// The volume actually sent to the speakers (lower than `volume` during the fade).
+    var outputVolume: Float { avPlayer.volume }
+
+    private var sleepTask: Task<Void, Never>?
+
+    var sleepTimerDescription: String? {
+        guard let left = sleepMinutesLeft else { return nil }
+        return left == 1 ? "Sleep timer: 1 minute left" : "Sleep timer: \(left) minutes left"
+    }
+
+    /// Starts a sleep timer for the given minutes; 0 turns it off.
+    func setSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        guard minutes > 0 else {
+            announce("Sleep timer off")
             return
         }
-        var text = "\(station.name). \(state.description)"
-        if !streamTitle.isEmpty { text += ". \(streamTitle)" }
-        announce(text)
+        startSleepTimer(seconds: TimeInterval(minutes * 60), minutes: minutes)
+        announce("Sleep timer set for \(minutes) minutes")
+    }
+
+    /// Steps through Off, 15, 30, 45, 60, 90 minutes, then back to Off.
+    func cycleSleepTimer() {
+        let all = [0] + Self.sleepTimerChoices
+        let index = all.firstIndex(of: sleepTimerMinutes) ?? 0
+        setSleepTimer(minutes: all[(index + 1) % all.count])
+    }
+
+    /// Starts a timer of any length in seconds. `minutes` is the menu choice it stands for.
+    func startSleepTimer(seconds: TimeInterval, minutes: Int) {
+        cancelSleepTimer()
+        sleepTimerMinutes = minutes
+        let end = Date().addingTimeInterval(seconds)
+        updateSleepMinutesLeft(until: end)
+
+        // Check the clock four times a second rather than sleeping for the whole
+        // length, so the timer stays right across Mac sleep and the fade is smooth.
+        sleepTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let left = end.timeIntervalSinceNow
+                if left <= 0 {
+                    self.finishSleepTimer()
+                    return
+                }
+                self.updateSleepMinutesLeft(until: end)
+                if left < self.sleepFadeDuration {
+                    self.avPlayer.volume = Float(self.volume * left / self.sleepFadeDuration)
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+    }
+
+    private func updateSleepMinutesLeft(until end: Date) {
+        let minutes = max(1, Int((end.timeIntervalSinceNow / 60).rounded(.up)))
+        if sleepMinutesLeft != minutes { sleepMinutesLeft = minutes }
+    }
+
+    private func cancelSleepTimer() {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepTimerMinutes = 0
+        sleepMinutesLeft = nil
+        avPlayer.volume = Float(volume)
+    }
+
+    private func finishSleepTimer() {
+        sleepTask = nil
+        sleepTimerMinutes = 0
+        sleepMinutesLeft = nil
+        if station != nil, state != .stopped {
+            stopPlayback()
+            announce("Sleep timer ended. Stopped")
+        } else {
+            announce("Sleep timer ended")
+        }
+        avPlayer.volume = Float(volume)
     }
 
     // MARK: Internals
