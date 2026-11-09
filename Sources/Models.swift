@@ -1,21 +1,55 @@
+// Models.swift
+//
+// The app's data and the decisions it makes. This file has no screens in it.
+// It holds:
+//   - Station: what the app knows about one radio station.
+//   - RadioBrowserClient: talks to the free Radio Browser station directory
+//     on the internet to search for stations.
+//   - announce(_:): makes VoiceOver speak a short message.
+//   - AppModel: the app's "brain". It keeps the favorites list, the search
+//     results, what's selected, and handles actions such as play, add to
+//     favorites, and search. The screens (ContentView.swift) read from it
+//     and call it; they don't make decisions themselves.
+//
+// See docs/HOW-IT-WORKS.md for a guided tour of the whole app.
+
+// "import" brings in code Apple provides. Foundation has the basics
+// (text, dates, files, networking). AppKit is the Mac's user interface
+// toolkit; it's needed here only for VoiceOver announcements.
 import Foundation
 import AppKit
 
 // MARK: - Station
 
+/// One radio station.
+///
+/// A `struct` is a bundle of related values. The words after the colon say
+/// what a Station can do:
+/// - `Codable`: can be saved to and loaded from JSON files.
+/// - `Identifiable`: has an `id` that tells stations apart, which lists need.
+/// - `Hashable`: can be compared and stored in sets.
 struct Station: Codable, Identifiable, Hashable {
+    // `var` means the value can change. Each line is one piece of information.
     var id: String
     var name: String
+    /// The stream address, for example "http://example.com:8000/stream".
     var url: String
     var country: String
+    /// Descriptive words such as "old time radio, drama", separated by commas.
     var tags: String
+    /// The audio format, such as "MP3" or "AAC".
     var codec: String
+    /// The stream's quality in kilobits per second (0 when unknown).
     var bitrate: Int
 
     /// Radio Browser stations use its station UUID as their ID. Stations added
     /// by hand or imported from a file get a prefixed ID instead.
+    ///
+    /// This is a "computed property": it has no stored value of its own and is
+    /// worked out from `id` each time it's read.
     var isFromRadioBrowser: Bool { !(id.hasPrefix("manual-") || id.hasPrefix("import-")) }
 
+    /// Text for the Format column, such as "MP3, 128 kbps".
     var formatDescription: String {
         var parts: [String] = []
         if !codec.isEmpty { parts.append(codec) }
@@ -25,23 +59,34 @@ struct Station: Codable, Identifiable, Hashable {
 }
 
 /// Shape of a station as returned by the Radio Browser API.
+///
+/// The names here must match the names in Radio Browser's JSON exactly, which
+/// is why one is spelled `url_resolved`. A `?` after a type means the value
+/// may be missing (Swift calls this an "optional").
 struct APIStation: Decodable {
+    // `let` means the value never changes once set.
     let stationuuid: String
     let name: String?
     let url: String?
+    /// The final stream address after Radio Browser has followed any redirects.
     let url_resolved: String?
     let country: String?
     let tags: String?
     let codec: String?
     let bitrate: Int?
 
+    /// Converts Radio Browser's version of a station into the app's own Station,
+    /// filling in blanks for anything missing.
     var station: Station {
+        // `??` means "or, if that's missing, use this instead".
         let resolved = url_resolved ?? ""
         return Station(
             id: stationuuid,
             name: (name ?? "Unnamed station").trimmingCharacters(in: .whitespacesAndNewlines),
+            // Prefer the resolved address; fall back to the original one.
             url: resolved.isEmpty ? (url ?? "") : resolved,
             country: country ?? "",
+            // Radio Browser sends "drama,otr"; add spaces so it reads "drama, otr".
             tags: (tags ?? "").replacingOccurrences(of: ",", with: ", "),
             codec: codec ?? "",
             bitrate: bitrate ?? 0
@@ -49,6 +94,10 @@ struct APIStation: Decodable {
     }
 }
 
+/// What the search looks at: station tags or station names.
+///
+/// An `enum` is a fixed list of choices. The text after each `=` is what the
+/// Search by pop-up button shows.
 enum SearchField: String, CaseIterable, Identifiable {
     case tag = "Tag"
     case name = "Name"
@@ -57,23 +106,40 @@ enum SearchField: String, CaseIterable, Identifiable {
 
 // MARK: - Radio Browser client
 
+/// Searches the Radio Browser directory (https://www.radio-browser.info).
+///
+/// An `actor` is like a class that only does one thing at a time, so two
+/// searches running at once can't trip over each other's data.
 actor RadioBrowserClient {
+    /// One entry in Radio Browser's list of mirror servers.
     private struct Server: Decodable { let name: String }
 
+    /// The mirror server chosen for this session (nil until the first search).
     private var baseURL: URL?
+    /// Apple's networking object, set up once and reused for every request.
     private let session: URLSession
 
+    // `init` runs when a new RadioBrowserClient is created.
     init() {
         let config = URLSessionConfiguration.default
+        // Radio Browser asks apps to identify themselves by name.
         config.httpAdditionalHeaders = ["User-Agent": "CrystalSet/1.0"]
+        // Give up on a request after 20 seconds.
         config.timeoutIntervalForRequest = 20
         session = URLSession(configuration: config)
     }
 
     /// Radio Browser asks clients to pick one of its mirror servers.
+    ///
+    /// `async` means this function can wait (here, for the network) without
+    /// freezing the app.
     private func server() async -> URL {
+        // Already picked one? Keep using it.
         if let baseURL { return baseURL }
+        // A known server to fall back on if the list can't be fetched.
         var chosen = URL(string: "https://de1.api.radio-browser.info")!
+        // Fetch the list of servers and pick one at random. Each `let` line
+        // must succeed for the block to run; if any fails, the fallback stays.
         if let listURL = URL(string: "https://all.api.radio-browser.info/json/servers"),
            let result = try? await session.data(from: listURL),
            let servers = try? JSONDecoder().decode([Server].self, from: result.0),
@@ -85,22 +151,36 @@ actor RadioBrowserClient {
         return chosen
     }
 
+    /// Searches for stations whose tag or name contains `text`.
+    ///
+    /// `throws` means this can fail with an error (for example, no internet),
+    /// which the caller must handle.
     func search(_ text: String, by field: SearchField) async throws -> [Station] {
         let base = await server()
+        // Build the web address, such as
+        // https://<server>/json/stations/search?tag=otr&hidebroken=true&...
         var components = URLComponents(url: base.appendingPathComponent("json/stations/search"),
                                        resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: field == .tag ? "tag" : "name", value: text),
+            // Leave out stations Radio Browser knows are broken.
             URLQueryItem(name: "hidebroken", value: "true"),
+            // Most-played stations first.
             URLQueryItem(name: "order", value: "clickcount"),
             URLQueryItem(name: "reverse", value: "true"),
+            // At most 200 results.
             URLQueryItem(name: "limit", value: "200"),
         ]
+        // Send the request and wait for the reply.
         let (data, response) = try await session.data(from: components.url!)
+        // Status codes from 200 to 299 mean success.
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            baseURL = nil  // try a different mirror next time
+            // Try a different mirror next time.
+            baseURL = nil
             throw URLError(.badServerResponse)
         }
+        // Convert the JSON reply into Stations, dropping any without a stream
+        // address and any duplicates. `seen` remembers IDs already kept.
         var seen = Set<String>()
         return try JSONDecoder().decode([APIStation].self, from: data)
             .map(\.station)
@@ -110,12 +190,17 @@ actor RadioBrowserClient {
     /// Tells Radio Browser a station was played (helps its popularity ranking).
     func countClick(_ stationID: String) async {
         let base = await server()
+        // `_ =` and `try?` mean: send it, and ignore the reply or any error.
         _ = try? await session.data(from: base.appendingPathComponent("json/url/\(stationID)"))
     }
 }
 
 // MARK: - VoiceOver announcements
 
+/// Asks VoiceOver to speak `text`, such as "Added Gunsmoke to favorites".
+///
+/// `@MainActor` means this runs on the main thread, where all user interface
+/// work must happen. If VoiceOver is off, nothing happens.
 @MainActor
 func announce(_ text: String) {
     NSAccessibility.post(
@@ -123,6 +208,7 @@ func announce(_ text: String) {
         notification: .announcementRequested,
         userInfo: [
             .announcement: text,
+            // High priority: speak it even if VoiceOver is in the middle of something.
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ]
     )
@@ -130,37 +216,62 @@ func announce(_ text: String) {
 
 // MARK: - App model
 
+/// The app's state and actions. There is one AppModel for the whole app,
+/// created in CrystalSetApp.swift.
+///
+/// A `class` (unlike a struct) is shared: every screen that uses the AppModel
+/// sees the same one. `ObservableObject` lets screens watch it. When a
+/// `@Published` value changes, SwiftUI redraws whatever shows that value.
 @MainActor
 final class AppModel: ObservableObject {
+    /// The two tabs in the main window.
     enum Tab: Hashable { case favorites, search }
 
+    // What the window is showing.
     @Published var tab: Tab = .favorites
+
+    // The favorites list. `didSet` runs every time the list changes, so it's
+    // saved to disk after every add, remove, or move.
     @Published var favorites: [Station] = [] { didSet { saveFavorites() } }
+    // The selected favorite's ID, or nil when nothing is selected.
     @Published var favoriteSelection: Station.ID?
+
+    // Search results and the selected result.
     @Published var results: [Station] = []
     @Published var searchSelection: Station.ID?
+    // The search text. This is the search the app starts with.
     @Published var query = "old time radio"
     @Published var field: SearchField = .tag
     @Published var isSearching = false
+    // Status text shown under the search field, such as "114 stations found."
     @Published var searchMessage = ""
+
+    // These switch sheets, file panels and alerts on and off. Setting one to
+    // true makes the window show it (see ContentView.swift).
     @Published var showingAddSheet = false
     @Published var showingImporter = false
     @Published var showingImportResult = false
     @Published var showingExporter = false
     /// Title of the alert that reports an import or export result.
     var resultTitle = "Import Favorites"
+    // Set to true to move the cursor into the search field (Command-F).
     @Published var focusSearchField = false
     /// True while a text field has focus, so arrow-key menu shortcuts
     /// (Command-Left/Right/Up/Down) go to the text field instead.
     @Published var isEditingText = false
+    // The message shown in the import or export result alert.
     var importMessage = ""
 
+    // The audio player (Player.swift) and the station directory client.
     let player = Player()
     private let client = RadioBrowserClient()
 
+    /// Where favorites are saved:
+    /// ~/Library/Application Support/Crystal Set/favorites.json
     private var favoritesFile: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("Crystal Set", isDirectory: true)
+        // Make the folder if it doesn't exist yet.
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("favorites.json")
 
@@ -174,6 +285,7 @@ final class AppModel: ObservableObject {
         return file
     }
 
+    // Runs once when the app starts: loads saved favorites, if there are any.
     init() {
         if let data = try? Data(contentsOf: favoritesFile),
            let saved = try? JSONDecoder().decode([Station].self, from: data) {
@@ -182,6 +294,8 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // Writes the favorites list to disk as JSON. ".atomic" writes to a
+    // temporary file first, so a crash can't leave a half-written file.
     private func saveFavorites() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted]
@@ -190,11 +304,14 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // Selection
+    // MARK: Selection
 
+    /// The station selected in whichever tab is showing, or nil.
     var selectedStation: Station? {
         switch tab {
         case .favorites:
+            // `first { ... }` finds the first station that matches the test in braces.
+            // `$0` means "the item being tested".
             return favorites.first { $0.id == favoriteSelection }
         case .search:
             return results.first { $0.id == searchSelection }
@@ -205,21 +322,27 @@ final class AppModel: ObservableObject {
         favorites.contains { $0.id == station.id }
     }
 
-    // Playback
+    // MARK: Playback
 
+    /// Plays a station, and tells Radio Browser it was played.
     func play(_ station: Station) {
         player.play(station)
         if station.isFromRadioBrowser {
+            // `Task { }` runs work in the background so the app doesn't wait for it.
             Task { await client.countClick(station.id) }
         }
     }
 
+    // Command-Return.
     func playSelected() {
         if let station = selectedStation { play(station) }
     }
 
     /// Plays the station, or pauses and resumes it if it's the one already playing.
+    /// Used by the Space bar in a station table.
     func playOrPause(_ station: Station) {
+        // `guard` checks a condition and leaves the function early if it fails.
+        // Here: if a different station is playing, just play this one.
         guard player.station?.id == station.id else {
             play(station)
             return
@@ -235,6 +358,7 @@ final class AppModel: ObservableObject {
     /// The list shown in the current tab, and its selection.
     private var currentList: [Station] { tab == .favorites ? favorites : results }
 
+    // Reads or changes the selection in whichever tab is showing.
     private var currentSelection: Station.ID? {
         get { tab == .favorites ? favoriteSelection : searchSelection }
         set {
@@ -243,15 +367,20 @@ final class AppModel: ObservableObject {
     }
 
     /// Plays the next (+1) or previous (-1) station in the current tab's list.
+    /// Command-Right Arrow and Command-Left Arrow.
     func playAdjacent(_ offset: Int) {
         let list = currentList
         guard !list.isEmpty else {
             announce(tab == .favorites ? "No favorites" : "No search results")
             return
         }
+        // Start from the selected station, or else the playing one.
         let anchor = currentSelection ?? player.station?.id
+        // Find that station's position in the list (0 is the first).
         let index = anchor.flatMap { id in list.firstIndex { $0.id == id } }
+        // Step from it. With nothing to start from, go to the first or last station.
         let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : list.count - 1)
+        // Stop at the ends of the list instead of wrapping around.
         guard list.indices.contains(next) else {
             announce(offset > 0 ? "Last station" : "First station")
             return
@@ -261,6 +390,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Selects the playing station in Favorites (or Search results) and shows that tab.
+    /// Command-L.
     func showCurrentStation() {
         guard let station = player.station else {
             announce("Nothing playing")
@@ -279,14 +409,17 @@ final class AppModel: ObservableObject {
         announce("Selected \(station.name)")
     }
 
+    /// Changes the volume by `step` (0.05 is 5%) and speaks the new level.
+    /// Command-Up Arrow and Command-Down Arrow.
     func changeVolume(by step: Double) {
         // Rounded to 5% so repeated presses land on 0%, 5%, 10%, … 100%.
+        // Volume runs from 0 (silent) to 1 (full); min and max keep it in that range.
         let newVolume = min(1, max(0, ((player.volume + step) * 20).rounded() / 20))
         player.volume = newVolume
         announce("Volume \(Int((newVolume * 100).rounded())) percent")
     }
 
-    // Favorites
+    // MARK: Favorites
 
     func addToFavorites(_ station: Station) {
         guard !isFavorite(station) else {
@@ -300,28 +433,35 @@ final class AppModel: ObservableObject {
     func removeFromFavorites(_ station: Station) {
         guard let index = favorites.firstIndex(where: { $0.id == station.id }) else { return }
         favorites.remove(at: index)
+        // If the removed station was selected, select the one that took its
+        // place (or the new last one), so the selection doesn't vanish.
         if favoriteSelection == station.id {
             favoriteSelection = favorites.isEmpty ? nil : favorites[min(index, favorites.count - 1)].id
         }
         announce("Removed \(station.name) from favorites")
     }
 
+    // Command-D: adds the selected station, or removes it if it's already a favorite.
     func toggleFavoriteForSelection() {
         guard let station = selectedStation else { return }
         if isFavorite(station) { removeFromFavorites(station) } else { addToFavorites(station) }
     }
 
+    /// Moves the selected favorite up (-1) or down (+1) one place.
     func moveSelectedFavorite(by offset: Int) {
         guard let id = favoriteSelection,
               let i = favorites.firstIndex(where: { $0.id == id }) else { return }
         let j = i + offset
         guard favorites.indices.contains(j) else { return }
         favorites.swapAt(i, j)
+        // People count from 1, so add 1 to the position.
         announce("Position \(j + 1) of \(favorites.count)")
     }
 
+    /// Adds a station typed into the Add Station sheet.
     func addManual(name: String, url: String) {
         let station = Station(
+            // UUID() makes a unique random ID.
             id: "manual-\(UUID().uuidString)",
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             url: url.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -333,14 +473,18 @@ final class AppModel: ObservableObject {
         announce("Added \(station.name) to favorites")
     }
 
-    // Search
+    // MARK: Search
 
+    /// Searches Radio Browser for `query` and fills in `results`.
     func search() {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Do nothing for an empty search, or if a search is already running.
         guard !text.isEmpty, !isSearching else { return }
         isSearching = true
         searchMessage = "Searching…"
         Task {
+            // `do` / `catch`: try the search; if it throws an error, the
+            // `catch` part runs instead.
             do {
                 let found = try await client.search(text, by: field)
                 results = found

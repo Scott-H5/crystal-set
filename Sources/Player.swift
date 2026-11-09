@@ -1,3 +1,18 @@
+// Player.swift
+//
+// Everything to do with sound:
+//   - Player: plays one stream at a time, tracks whether it's connecting,
+//     playing, paused, stopped or failed, and runs the sleep timer.
+//   - MetadataDelegate: picks up the show title some streams send.
+//   - StreamResolver: opens playlist links (.pls, .m3u, .asx) to find the
+//     actual stream inside them.
+//
+// The Player knows nothing about windows or buttons. The screens watch it
+// and call its functions, such as play(_:), pause() and stop().
+
+// AVFoundation is Apple's audio and video toolkit; it provides AVPlayer,
+// which does the actual streaming. Combine lets code watch values change.
+// MediaPlayer connects to the keyboard's media keys and to Now Playing.
 import AVFoundation
 import Combine
 import MediaPlayer
@@ -7,6 +22,9 @@ import MediaPlayer
 /// Plays one internet radio stream at a time and reports what it is doing.
 @MainActor
 final class Player: ObservableObject {
+    /// What the player is doing right now.
+    ///
+    /// `failed` carries a reason with it, such as "the stream could not be opened."
     enum State: Equatable {
         case stopped
         case connecting
@@ -14,6 +32,7 @@ final class Player: ObservableObject {
         case paused
         case failed(String)
 
+        /// The words shown and spoken for each state.
         var description: String {
             switch self {
             case .stopped: return "Stopped"
@@ -25,22 +44,32 @@ final class Player: ObservableObject {
         }
     }
 
+    // `private(set)` means other files can read these but only the Player can change them.
     @Published private(set) var state: State = .stopped
+    // The station playing (or last played), or nil.
     @Published private(set) var station: Station?
     /// Show or song title sent by the stream (ICY metadata), when available.
     @Published private(set) var streamTitle = ""
+    // The volume setting, from 0 (silent) to 1 (full). 0.8 is 80%.
+    // `didSet` passes every change straight on to the audio player.
     @Published var volume: Double = 0.8 {
         didSet { avPlayer.volume = Float(volume) }
     }
 
+    // Apple's player object, which does the streaming.
     private let avPlayer = AVPlayer()
+    // These keep "watchers" alive; when one is set to nil, its watching stops.
     private var statusObserver: AnyCancellable?
     private var itemObserver: AnyCancellable?
     private var metadataDelegate: MetadataDelegate?
+    // The background job that opens a stream, so it can be cancelled.
     private var loadTask: Task<Void, Never>?
 
     init() {
         avPlayer.volume = Float(volume)
+        // Watch AVPlayer's own status (playing, waiting for data, paused) and
+        // call timeControlChanged(_:) each time it changes.
+        // `[weak self]` stops the watcher from keeping the Player alive forever.
         statusObserver = avPlayer.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
@@ -49,11 +78,18 @@ final class Player: ObservableObject {
         setUpRemoteCommands()
     }
 
+    /// True when a station is connecting, playing, paused or failed (anything but stopped).
     var isActive: Bool { station != nil && state != .stopped }
 
     // MARK: Controls
 
+    /// Starts playing a station.
+    ///
+    /// The stream opens in the background, so this returns straight away. The
+    /// state goes to `.connecting`, then to `.playing` once sound arrives
+    /// (see timeControlChanged), or to `.failed` if the stream can't be opened.
     func play(_ station: Station) {
+        // Cancel any stream still being opened, and silence the current one.
         loadTask?.cancel()
         avPlayer.pause()
         self.station = station
@@ -63,7 +99,10 @@ final class Player: ObservableObject {
         updateNowPlayingInfo()
 
         loadTask = Task { [weak self] in
+            // Turn a playlist link into the real stream address (see StreamResolver).
             let url = await StreamResolver.resolve(station.url)
+            // While that ran, the person may have picked another station or
+            // stopped; if so, give up on this one.
             guard let self, !Task.isCancelled, self.station?.id == station.id else { return }
             guard let url else {
                 self.fail("the stream address is not valid.")
@@ -81,6 +120,7 @@ final class Player: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// Resumes a paused station, or replays a stopped or failed one.
     func resume() {
         guard let station else { return }
         switch state {
@@ -90,11 +130,13 @@ final class Player: ObservableObject {
         case .stopped, .failed:
             play(station)
         case .playing, .connecting:
+            // Already going; nothing to do.
             break
         }
     }
 
     /// Reconnects to the current station, e.g. after the stream drops.
+    /// Command-R.
     func reconnect() {
         guard let station else {
             announce("Nothing playing")
@@ -103,6 +145,7 @@ final class Player: ObservableObject {
         play(station)
     }
 
+    // Command-P, the Pause/Resume button, and the keyboard's play/pause key.
     func togglePause() {
         if state == .playing || state == .connecting { pause() } else { resume() }
     }
@@ -116,9 +159,11 @@ final class Player: ObservableObject {
         if wasPlaying { announce(hadTimer ? "Stopped. Sleep timer off" : "Stopped") }
     }
 
+    // The part of stopping shared by stop() and the sleep timer. It speaks nothing.
     private func stopPlayback() {
         loadTask?.cancel()
         avPlayer.pause()
+        // Let go of the stream entirely, so it stops downloading.
         avPlayer.replaceCurrentItem(with: nil)
         itemObserver = nil
         metadataDelegate = nil
@@ -128,6 +173,7 @@ final class Player: ObservableObject {
     }
 
     /// Speaks the current station, state, show title, and sleep timer for VoiceOver users.
+    /// Command-I.
     func announceStatus() {
         var text: String
         if let station {
@@ -143,6 +189,7 @@ final class Player: ObservableObject {
     // MARK: Sleep timer
 
     /// Sleep timer lengths offered in menus, in minutes.
+    /// Change this list to offer different choices; the menus update to match.
     static let sleepTimerChoices = [15, 30, 45, 60, 90]
 
     /// Length of the running sleep timer in minutes, or 0 when it's off.
@@ -155,8 +202,10 @@ final class Player: ObservableObject {
     /// The volume actually sent to the speakers (lower than `volume` during the fade).
     var outputVolume: Float { avPlayer.volume }
 
+    // The background job that counts down, so it can be cancelled.
     private var sleepTask: Task<Void, Never>?
 
+    /// "Sleep timer: 23 minutes left", or nil when the timer is off.
     var sleepTimerDescription: String? {
         guard let left = sleepMinutesLeft else { return nil }
         return left == 1 ? "Sleep timer: 1 minute left" : "Sleep timer: \(left) minutes left"
@@ -174,16 +223,20 @@ final class Player: ObservableObject {
     }
 
     /// Steps through Off, 15, 30, 45, 60, 90 minutes, then back to Off.
+    /// Command-T.
     func cycleSleepTimer() {
+        // 0 stands for Off. `%` wraps the position back to 0 after the last choice.
         let all = [0] + Self.sleepTimerChoices
         let index = all.firstIndex(of: sleepTimerMinutes) ?? 0
         setSleepTimer(minutes: all[(index + 1) % all.count])
     }
 
     /// Starts a timer of any length in seconds. `minutes` is the menu choice it stands for.
+    /// (Taking seconds lets a quick test use a timer of a few seconds.)
     func startSleepTimer(seconds: TimeInterval, minutes: Int) {
         cancelSleepTimer()
         sleepTimerMinutes = minutes
+        // The moment the timer should end.
         let end = Date().addingTimeInterval(seconds)
         updateSleepMinutesLeft(until: end)
 
@@ -198,19 +251,25 @@ final class Player: ObservableObject {
                     return
                 }
                 self.updateSleepMinutesLeft(until: end)
+                // In the last `sleepFadeDuration` seconds, lower the output in
+                // step with the time left: half the time left, half the volume.
+                // The `volume` setting itself is untouched.
                 if left < self.sleepFadeDuration {
                     self.avPlayer.volume = Float(self.volume * left / self.sleepFadeDuration)
                 }
+                // Wait a quarter of a second (250 million nanoseconds).
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         }
     }
 
+    // Updates the minutes-left value, but only when the whole number changes.
     private func updateSleepMinutesLeft(until end: Date) {
         let minutes = max(1, Int((end.timeIntervalSinceNow / 60).rounded(.up)))
         if sleepMinutesLeft != minutes { sleepMinutesLeft = minutes }
     }
 
+    // Turns the timer off and puts the output volume back to the setting.
     private func cancelSleepTimer() {
         sleepTask?.cancel()
         sleepTask = nil
@@ -219,6 +278,7 @@ final class Player: ObservableObject {
         avPlayer.volume = Float(volume)
     }
 
+    // Runs when the timer reaches zero.
     private func finishSleepTimer() {
         sleepTask = nil
         sleepTimerMinutes = 0
@@ -229,14 +289,17 @@ final class Player: ObservableObject {
         } else {
             announce("Sleep timer ended")
         }
+        // Back to normal volume, ready for the next time something plays.
         avPlayer.volume = Float(volume)
     }
 
     // MARK: Internals
 
+    /// Hands a real stream address to AVPlayer and starts it.
     private func start(_ url: URL) {
         let item = AVPlayerItem(url: url)
 
+        // Listen for show titles sent by the stream.
         let delegate = MetadataDelegate { [weak self] title in
             guard let self, self.streamTitle != title else { return }
             self.streamTitle = title
@@ -247,6 +310,7 @@ final class Player: ObservableObject {
         item.add(output)
         metadataDelegate = delegate
 
+        // Watch for the stream failing to open, and report why.
         itemObserver = item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak item] status in
@@ -261,6 +325,7 @@ final class Player: ObservableObject {
         avPlayer.play()
     }
 
+    // Stops and reports a problem, such as a stream that won't open.
     private func fail(_ reason: String) {
         avPlayer.pause()
         avPlayer.replaceCurrentItem(with: nil)
@@ -269,19 +334,25 @@ final class Player: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    // Called whenever AVPlayer's own status changes.
     private func timeControlChanged(_ status: AVPlayer.TimeControlStatus) {
         switch status {
         case .playing:
+            // Sound is coming out.
             if state != .playing {
                 let wasConnecting = state == .connecting
                 state = .playing
+                // Say "Playing" only when a new connection succeeds, not after
+                // every brief pause to wait for more data.
                 if wasConnecting, let station { announce("Playing \(station.name)") }
                 updateNowPlayingInfo()
             }
         case .waitingToPlayAtSpecifiedRate:
+            // The stream ran short of data and is waiting for more (buffering).
             if state == .playing { state = .connecting }
         case .paused:
             break
+        // Covers any status a future macOS might add.
         @unknown default:
             break
         }
@@ -289,6 +360,9 @@ final class Player: ObservableObject {
 
     // MARK: Media keys and Now Playing
 
+    // Lets the keyboard's media keys, headphones, and Control Center's Now
+    // Playing control this player. Each "target" is the code to run for one
+    // command; it hops to the main thread, since that's where the Player lives.
     private func setUpRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
@@ -309,6 +383,7 @@ final class Player: ObservableObject {
         }
     }
 
+    // Tells macOS what's playing, for Control Center's Now Playing.
     private func updateNowPlayingInfo() {
         let center = MPNowPlayingInfoCenter.default()
         guard let station, state != .stopped else {
@@ -316,6 +391,7 @@ final class Player: ObservableObject {
             center.playbackState = .stopped
             return
         }
+        // Show the show title when there is one, with the station as the "artist".
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: streamTitle.isEmpty ? station.name : streamTitle,
             MPMediaItemPropertyArtist: station.name,
@@ -330,16 +406,23 @@ final class Player: ObservableObject {
 // MARK: - Stream metadata
 
 /// Receives ICY "StreamTitle" metadata from Shoutcast and Icecast streams.
+///
+/// Many internet radio servers send the current show or song title alongside
+/// the audio. AVPlayer passes it to a "delegate" object like this one; it
+/// hands each title to the `onTitle` code it was given.
 private final class MetadataDelegate: NSObject, AVPlayerItemMetadataOutputPushDelegate {
+    // The code to run with each new title (a "closure": code stored like a value).
     private let onTitle: @MainActor (String) -> Void
 
     init(onTitle: @escaping @MainActor (String) -> Void) {
         self.onTitle = onTitle
     }
 
+    // AVPlayer calls this whenever the stream sends new metadata.
     func metadataOutput(_ output: AVPlayerItemMetadataOutput,
                         didOutputTimedMetadataGroups groups: [AVTimedMetadataGroup],
                         from track: AVPlayerItemTrack?) {
+        // Prefer an item marked as the title; otherwise take the first item.
         guard let item = groups.first?.items.first(where: { $0.commonKey == .commonKeyTitle })
                 ?? groups.first?.items.first else { return }
         let onTitle = self.onTitle
@@ -355,15 +438,25 @@ private final class MetadataDelegate: NSObject, AVPlayerItemMetadataOutputPushDe
 
 /// AVPlayer can't open .pls, .m3u (non-HLS), or .asx playlist files, which many
 /// stations publish. This fetches the playlist and returns the first stream in it.
+///
+/// A playlist file is a short text file listing stream addresses, for example:
+///   [playlist]
+///   File1=http://example.com:8000/stream
 enum StreamResolver {
+    /// Returns the address to play: the stream inside a playlist, or the
+    /// address itself if it isn't a playlist. Nil if the address isn't valid.
     static func resolve(_ address: String) async -> URL? {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only web addresses (http or https) can be played.
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else { return nil }
 
+        // Not a playlist? Play the address as it is.
         let ext = url.pathExtension.lowercased()
         guard ["pls", "m3u", "asx"].contains(ext) else { return url }
 
+        // Download the playlist (giving up after 15 seconds, or if it's
+        // suspiciously large) and read it as text.
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("CrystalSet/1.0", forHTTPHeaderField: "User-Agent")
         guard let (data, _) = try? await URLSession.shared.data(for: request),
@@ -371,9 +464,11 @@ enum StreamResolver {
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
         else { return url }
 
+        // If no stream is found inside, try the original address anyway.
         return firstStream(in: text) ?? url
     }
 
+    /// Finds the first web address in a playlist's text, reading it line by line.
     static func firstStream(in playlist: String) -> URL? {
         for rawLine in playlist.components(separatedBy: .newlines) {
             var line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -388,6 +483,7 @@ enum StreamResolver {
                     line = candidate
                 }
             }
+            // .m3u lines are plain addresses, so they need no special handling.
             if line.lowercased().hasPrefix("http"), let url = URL(string: line) {
                 return url
             }

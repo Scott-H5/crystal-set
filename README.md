@@ -106,6 +106,8 @@ Favorites are saved to `~/Library/Application Support/Crystal Set/favorites.json
 
 ## Source layout
 
+New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a guided tour for beginners, with things to try. Every source file also begins with a summary of what it does.
+
 | File | Contents |
 | --- | --- |
 | `Sources/CrystalSetApp.swift` | App entry point and menu commands |
@@ -113,7 +115,7 @@ Favorites are saved to `~/Library/Application Support/Crystal Set/favorites.json
 | `Sources/StationTable.swift` | AppKit station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
 | `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
 | `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
-| `Sources/Importer.swift` | JSON favorites importer |
+| `Sources/ImportExport.swift` | Importing and exporting favorites as JSON |
 
 ## License
 
