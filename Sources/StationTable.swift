@@ -55,8 +55,12 @@ struct StationTable: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .bezelBorder
 
+        // Load the rows now. The table may already have asked for its row
+        // count (and been told zero) when its data source was set above, and
+        // updateNSView only reloads when the station list changes.
         coordinator.table = table
         coordinator.stations = stations
+        coordinator.reload()
         coordinator.syncSelection()
         return scrollView
     }
