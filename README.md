@@ -48,7 +48,7 @@ The app is written to `build/Crystal Set.app` in the project folder.
 | --- | --- |
 | Play the selected station | Return, or double-click |
 | Play, or pause and resume if it's already playing | Space |
-| Remove the selected favorite | Delete (Favorites only) |
+| Remove the selected favorite | Command-Delete (Favorites only) |
 | Play a station with VoiceOver | VO-Space on its row |
 
 Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space) with Play and Add to / Remove from Favorites.
@@ -99,7 +99,7 @@ Favorites are saved to `~/Library/Application Support/Crystal Set/favorites.json
 | --- | --- |
 | `Sources/CrystalSetApp.swift` | App entry point and menu commands |
 | `Sources/ContentView.swift` | Window, Favorites and Search tabs, Now Playing bar, Add Station sheet |
-| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return, Space and double-click play, Delete, context menu, VoiceOver actions |
+| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
 | `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
 | `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
 | `Sources/Importer.swift` | JSON favorites importer |

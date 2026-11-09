@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// AppKit is used here (instead of SwiftUI's Table) so the table can tell when
 /// VoiceOver selects a row (VO-Space) and play that station. The table also
-/// plays on Return, Space, or double-click; Delete removes a favorite; and it
+/// plays on Return, Space, or double-click; Command-Delete removes a favorite; and it
 /// has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space)
 /// with Play and Add to / Remove from Favorites.
 struct StationTable: NSViewRepresentable {
@@ -15,7 +15,7 @@ struct StationTable: NSViewRepresentable {
     let stations: [Station]
     @Binding var selection: Station.ID?
     let title: String
-    /// Delete and Forward Delete remove the selected station (Favorites only).
+    /// Command-Delete removes the selected station (Favorites only).
     var allowsDelete = false
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -287,7 +287,17 @@ final class StationNSTableView: NSTableView {
     weak var coordinator: StationTable.Coordinator?
 
     override func keyDown(with event: NSEvent) {
-        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+        // Command-Delete (or Command-Forward Delete) removes a favorite. A plain
+        // Delete does nothing, so a stray keypress can't remove a station.
+        if modifiers == .command, event.keyCode == 51 || event.keyCode == 117,
+           selectedRow >= 0, let coordinator, coordinator.parent?.allowsDelete == true {
+            coordinator.delete(row: selectedRow)
+            return
+        }
+
+        let plain = modifiers.isEmpty
         guard plain, selectedRow >= 0, let coordinator else {
             super.keyDown(with: event)
             return
@@ -297,12 +307,6 @@ final class StationNSTableView: NSTableView {
             coordinator.play(row: selectedRow)
         case 49:       // Space
             coordinator.playOrPause(row: selectedRow)
-        case 51, 117:  // Delete, Forward Delete
-            if coordinator.parent?.allowsDelete == true {
-                coordinator.delete(row: selectedRow)
-            } else {
-                super.keyDown(with: event)
-            }
         default:
             super.keyDown(with: event)
         }
