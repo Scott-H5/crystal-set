@@ -20,17 +20,25 @@ OTR Tuner uses only standard macOS controls: a tab view, tables, buttons, text f
 
 ## Build
 
-There is no Xcode project. The build script compiles the sources with `swiftc` and produces an ad hoc signed app bundle:
+There is no Xcode project. The build script compiles the sources with `swiftc` and produces an ad hoc signed app bundle. It works from any folder.
+
+To build and install in one step:
 
 ```bash
-bash build.sh
+bash ~/Projects/otr-tuner/build.sh install
 ```
 
-The app is written to `build/OTR Tuner.app`. To install it:
+This builds the app, quits OTR Tuner if it's running, replaces the copy in `/Applications`, and reopens it if it was running.
+
+To build without installing:
 
 ```bash
-cp -R "build/OTR Tuner.app" /Applications/
+bash ~/Projects/otr-tuner/build.sh
 ```
+
+The app is written to `build/OTR Tuner.app` in the project folder.
+
+(Adjust the path if you cloned the project somewhere other than `~/Projects/otr-tuner`.)
 
 ## Keyboard shortcuts
 
