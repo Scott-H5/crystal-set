@@ -140,46 +140,6 @@ struct SearchView: View {
     }
 }
 
-// MARK: - Station table
-
-/// A standard table of stations. Return or double-click plays the selected row,
-/// and the context menu (VoiceOver: VO-Shift-M) offers the same actions as the buttons.
-struct StationTable: View {
-    @EnvironmentObject private var model: AppModel
-    let stations: [Station]
-    @Binding var selection: Station.ID?
-    let title: String
-
-    var body: some View {
-        Table(stations, selection: $selection) {
-            TableColumn("Name", value: \.name)
-            TableColumn("Country", value: \.country)
-                .width(min: 80, ideal: 140)
-            TableColumn("Format", value: \.formatDescription)
-                .width(min: 70, ideal: 100)
-            TableColumn("Tags", value: \.tags)
-        }
-        .contextMenu(forSelectionType: Station.ID.self) { ids in
-            if let station = station(for: ids) {
-                Button("Play") { model.play(station) }
-                if model.isFavorite(station) {
-                    Button("Remove from Favorites") { model.removeFromFavorites(station) }
-                } else {
-                    Button("Add to Favorites") { model.addToFavorites(station) }
-                }
-            }
-        } primaryAction: { ids in
-            if let station = station(for: ids) { model.play(station) }
-        }
-        .accessibilityLabel(title)
-    }
-
-    private func station(for ids: Set<Station.ID>) -> Station? {
-        guard let id = ids.first else { return nil }
-        return stations.first { $0.id == id }
-    }
-}
-
 // MARK: - Now playing
 
 struct NowPlayingBar: View {

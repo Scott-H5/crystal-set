@@ -11,7 +11,7 @@ A small, VoiceOver-friendly macOS app for listening to old time radio (OTR) inte
 
 ## Accessibility
 
-OTR Tuner uses only standard SwiftUI controls: a tab view, tables, buttons, text fields, a picker, and a slider. Nothing is custom-drawn. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, and changes to favorites.
+OTR Tuner uses only standard macOS controls: a tab view, tables, buttons, text fields, a picker, and a slider. Nothing is custom-drawn. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, and changes to favorites.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ cp -R "build/OTR Tuner.app" /Applications/
 | Add station by address | Command-N |
 | Import favorites | Command-Shift-I |
 
-Every table row also has a context menu (VoiceOver: VO-Shift-M) with Play and Add to / Remove from Favorites.
+With VoiceOver, VO-Space on a table row plays that station. Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space) with Play and Add to / Remove from Favorites.
 
 ## Importing favorites
 
@@ -69,6 +69,7 @@ Favorites are saved to `~/Library/Application Support/OTR Tuner/favorites.json`.
 | --- | --- |
 | `Sources/OTRTunerApp.swift` | App entry point and menu commands |
 | `Sources/ContentView.swift` | Window, Favorites and Search tabs, Now Playing bar, Add Station sheet |
+| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return and double-click play, context menu, VoiceOver actions |
 | `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
 | `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
 | `Sources/Importer.swift` | JSON favorites importer |
