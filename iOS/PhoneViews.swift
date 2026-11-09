@@ -4,6 +4,7 @@
 //   - RootView: the three tabs (Favorites, Search, Now Playing), plus the
 //     Add Station sheet, the Import and Export file panels, the result
 //     alert, and Magic Tap.
+//   - SleepTimerPicker: the sleep timer choices, used in two places.
 //   - FavoritesScreen, SearchScreen, NowPlayingScreen: one per tab.
 //   - StationRow: one station in a list. Double-tap plays it; VoiceOver's
 //     Actions rotor (swipe up or down) offers the other actions.
@@ -125,6 +126,12 @@ struct FavoritesScreen: View {
                             model.showingExporter = true
                         }
                         .disabled(model.favorites.isEmpty)
+
+                        Divider()
+
+                        // A submenu with a checkmark on the current choice, so the
+                        // timer can be set without going to the Now Playing tab.
+                        SleepTimerPicker(player: model.player)
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -399,16 +406,7 @@ struct NowPlayingScreen: View {
                 }
 
                 Section {
-                    // Off, 15 minutes, 30 minutes, and so on.
-                    Picker("Sleep Timer", selection: Binding(
-                        get: { player.sleepTimerMinutes },
-                        set: { player.setSleepTimer(minutes: $0) }
-                    )) {
-                        Text("Off").tag(0)
-                        ForEach(Player.sleepTimerChoices, id: \.self) { minutes in
-                            Text("\(minutes) minutes").tag(minutes)
-                        }
-                    }
+                    SleepTimerPicker(player: player)
                     if let sleep = player.sleepTimerDescription {
                         Text(sleep)
                     }
@@ -418,6 +416,28 @@ struct NowPlayingScreen: View {
             }
             .navigationTitle("Now Playing")
         }
+    }
+}
+
+// MARK: - Sleep timer picker
+
+/// The sleep timer choices: Off, 15 minutes, 30 minutes, and so on.
+/// Used in the Now Playing tab and in the Favorites tab's More menu. Inside
+/// a menu it becomes a submenu; in a Form it's a standard picker row.
+struct SleepTimerPicker: View {
+    @ObservedObject var player: Player
+
+    var body: some View {
+        Picker("Sleep Timer", systemImage: "moon.zzz", selection: Binding(
+            get: { player.sleepTimerMinutes },
+            set: { player.setSleepTimer(minutes: $0) }
+        )) {
+            Text("Off").tag(0)
+            ForEach(Player.sleepTimerChoices, id: \.self) { minutes in
+                Text("\(minutes) minutes").tag(minutes)
+            }
+        }
+        .pickerStyle(.menu)
     }
 }
 

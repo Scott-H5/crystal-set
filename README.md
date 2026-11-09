@@ -23,6 +23,7 @@ On iPhone, with VoiceOver:
 - Magic Tap (a two-finger double-tap) pauses and resumes from anywhere in the app.
 - The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Change Sleep Timer.
 - The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
+- The Favorites tab's More menu has Add Station, Import, Export, and a Sleep Timer submenu, so you can set the timer without leaving your favorites.
 
 ## Requirements
 
