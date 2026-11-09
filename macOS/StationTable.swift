@@ -246,6 +246,13 @@ struct StationTable: NSViewRepresentable {
             }
         }
 
+        // The context menu's Rename…, in the Favorites table only. Opens the
+        // Rename sheet. (Not among the VoiceOver actions, to keep that list short.)
+        @objc func menuRename(_ sender: NSMenuItem) {
+            guard parent?.allowsDelete == true, let station = station(at: sender.tag) else { return }
+            model?.renamingStation = station
+        }
+
         func favoriteActionTitle(row: Int) -> String {
             if let station = station(at: row), model?.isFavorite(station) == true {
                 return "Remove from Favorites"
@@ -341,6 +348,15 @@ struct StationTable: NSViewRepresentable {
             favorite.target = self
             favorite.tag = row
             menu.addItem(favorite)
+
+            // Only favorites can be renamed. (`allowsDelete` is on only for
+            // the Favorites table.)
+            if parent?.allowsDelete == true {
+                let rename = NSMenuItem(title: "Rename…", action: #selector(menuRename(_:)), keyEquivalent: "")
+                rename.target = self
+                rename.tag = row
+                menu.addItem(rename)
+            }
         }
 
         @objc private func menuPlay(_ sender: NSMenuItem) { play(row: sender.tag) }

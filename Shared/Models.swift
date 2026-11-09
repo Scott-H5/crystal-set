@@ -265,7 +265,9 @@ final class AppModel: ObservableObject {
 
     // These switch sheets, file panels and alerts on and off. Setting one to
     // true makes the window show it (see ContentView.swift).
-    @Published var showingAddSheet = false
+    /// The favorite being renamed, or nil. Setting it opens the Rename
+    /// sheet on the Mac, or the Rename alert on the iPhone.
+    @Published var renamingStation: Station?
     @Published var showingImporter = false
     @Published var showingImportResult = false
     @Published var showingExporter = false
@@ -484,28 +486,39 @@ final class AppModel: ObservableObject {
         announce("Position \(j + 1) of \(favorites.count)")
     }
 
-    /// Adds a station typed into the Add Station sheet.
-    func addManual(name: String, url: String) {
-        let station = Station(
-            // UUID() makes a unique random ID.
-            id: "manual-\(UUID().uuidString)",
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            url: url.trimmingCharacters(in: .whitespacesAndNewlines),
-            country: "", tags: "", codec: "", bitrate: 0
-        )
-        favorites.append(station)
-        favoriteSelection = station.id
-        tab = .favorites
-        announce("Added \(station.name) to favorites")
+    /// Gives a favorite a new name. An empty name is ignored.
+    func renameFavorite(_ station: Station, to newName: String) {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = favorites.firstIndex(where: { $0.id == station.id }) else { return }
+        favorites[index].name = name
+        // If it's the station playing, the Now Playing bar shows the new name too.
+        player.stationRenamed(favorites[index])
+        announce("Renamed to \(name)")
+    }
+
+    /// Starts adding a station by its address (File > Add Station…, Command-N).
+    /// There's no separate form: the Search field takes addresses too, so
+    /// this shows Search with an empty field, ready to paste into.
+    func startAddingStation() {
+        tab = .search
+        query = ""
+        focusSearchField = true
     }
 
     // MARK: Search
 
     /// Searches Radio Browser for `query` and fills in `results`.
+    /// If `query` is a stream address instead, shows that one station.
     func search() {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         // Do nothing for an empty search, or if a search is already running.
         guard !text.isEmpty, !isSearching else { return }
+        // Anything starting with http:// or https:// is an address, not a search.
+        let lowered = text.lowercased()
+        if lowered.hasPrefix("http://") || lowered.hasPrefix("https://") {
+            lookUpAddress(text)
+            return
+        }
         isSearching = true
         searchMessage = "Searching…"
         Task {
@@ -519,6 +532,53 @@ final class AppModel: ObservableObject {
             } catch {
                 searchMessage = "Search failed: \(error.localizedDescription)"
             }
+            isSearching = false
+            announce(searchMessage)
+        }
+    }
+
+    /// Shows a stream address as a single search result, so it can be played
+    /// to try it, then added to Favorites like any other result.
+    ///
+    /// The station is named after what the stream calls itself (see
+    /// StreamResolver.stationName), or else the address's server name, such
+    /// as "radio.example.com". Rename it later in Favorites.
+    private func lookUpAddress(_ address: String) {
+        // The same check Player uses: an http or https address with a server name.
+        guard let url = URL(string: address), url.host != nil else {
+            results = []
+            searchMessage = "That isn't a valid stream address."
+            announce(searchMessage)
+            return
+        }
+        // Already a favorite? Show that one, so it isn't added twice.
+        if let existing = favorites.first(where: { $0.url == address }) {
+            results = [existing]
+            searchSelection = existing.id
+            searchMessage = "This address is already in Favorites as \(existing.name)."
+            announce(searchMessage)
+            return
+        }
+        isSearching = true
+        searchMessage = "Checking address…"
+        Task {
+            // A playlist link (.pls, .m3u) is opened to find the stream inside,
+            // since that's what reports the station's name.
+            let streamURL = await StreamResolver.resolve(address) ?? url
+            let name = await StreamResolver.stationName(at: streamURL) ?? url.host ?? address
+            let station = Station(
+                // UUID() makes a unique random ID. "manual-" marks it as not
+                // from Radio Browser.
+                id: "manual-\(UUID().uuidString)",
+                name: name,
+                // Keep the address as typed. A playlist link is opened again
+                // each time it plays, so it keeps working if the stream moves.
+                url: address,
+                country: "", tags: "", codec: "", bitrate: 0
+            )
+            results = [station]
+            searchSelection = station.id
+            searchMessage = "Found \(name). Play it to try it, or add it to Favorites."
             isSearching = false
             announce(searchMessage)
         }

@@ -3,8 +3,8 @@
 A small, VoiceOver-friendly internet radio app for the Mac and iPhone. It was built for old time radio (OTR) — mysteries, westerns, comedies and science fiction from radio's golden age — but it plays any internet radio stream. It's named after the crystal set, the simple home-built radio of the early broadcast era.
 
 - Search the free [Radio Browser](https://www.radio-browser.info) station directory by tag or name
-- Keep a reorderable list of favorite stations
-- Add any stream by its address, including `.pls` and `.m3u` playlist links
+- Keep a reorderable list of favorite stations, and rename them
+- Add any stream by pasting its address into the Search field, including `.pls` and `.m3u` playlist links
 - Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export, and export them as JSON
 - Shows the current show title when the stream sends one
 - Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
@@ -19,11 +19,12 @@ Crystal Set uses only standard controls: tabs, tables and lists, buttons, text f
 On iPhone, with VoiceOver:
 
 - Double-tap a station to play it.
-- The Actions rotor (swipe up or down) on a station offers Add to or Remove from Favorites, Stop (on the playing station), and Move Up and Move Down (in Favorites).
+- The Actions rotor (swipe up or down) on a station has the same swipe action a sighted person gets: Remove on a favorite, Add to Favorites on a search result (or Remove, if it's already a favorite). The station that's playing also has Stop and Sleep Timer….
+- To tidy up Favorites, tap Edit. Double-tapping a favorite then renames it, and its Actions rotor has Move Up, Move Down and Delete. Each move says the new position, such as "Position 3 of 12". Tap Done when you're finished. Rename is also in a favorite's touch-and-hold menu.
 - Magic Tap (a two-finger double-tap) pauses and resumes from anywhere in the app.
 - The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Sleep Timer…, which opens a pop-up list of timer lengths. The station that's playing has Stop and Sleep Timer… in its Actions rotor too.
 - The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
-- The Favorites tab's More menu starts with a Sleep Timer submenu, so you can set the timer without leaving your favorites, followed by Add Station, Import, and Export.
+- The Favorites tab's More menu starts with a Sleep Timer submenu, so you can set the timer without leaving your favorites, followed by Import and Export.
 
 ## Requirements
 
@@ -111,9 +112,20 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | Move favorite up / down | Command-Option-Up Arrow / Down Arrow |
 | Show Favorites / Search | Command-1 / Command-2 |
 | Find stations (focus search field) | Command-F |
-| Add station by address | Command-N |
+| Add station by address (shows Search, ready to paste) | Command-N |
 | Import favorites | Command-Shift-I |
 | Export favorites | Command-Shift-E |
+
+## Adding a station by its address
+
+Paste or type the stream address into the Search field and press Return (on iPhone, tap Search). Anything starting with `http://` or `https://` is treated as an address rather than a search. It shows up as the only search result, so you can play it first, then add it to Favorites. On the Mac, File > Add Station (Command-N) jumps to an empty Search field, ready to paste into.
+
+Crystal Set names the station after what the stream calls itself, when it says. Otherwise it uses the server's name, such as `radio.example.com`. If the address is already a favorite, that favorite is shown instead, so it isn't added twice.
+
+## Renaming a favorite
+
+- **Mac:** select the favorite, then click Rename… in the Favorites tab, choose Station > Rename Favorite…, or choose Rename… in the context menu (VO-Shift-M).
+- **iPhone:** tap Edit in the Favorites tab, then double-tap the favorite. Or touch and hold it and choose Rename….
 
 ## Sleep timer
 
@@ -147,7 +159,7 @@ New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a gui
 | `Shared/Player.swift` | Playback, stream titles, sleep timer, playlist links, media keys and Now Playing (Mac and iPhone) |
 | `Shared/ImportExport.swift` | Importing and exporting favorites as JSON (Mac and iPhone) |
 | `macOS/CrystalSetApp.swift` | Mac app entry point and menu commands |
-| `macOS/ContentView.swift` | Mac window: Favorites and Search tabs, Now Playing bar, Add Station sheet |
+| `macOS/ContentView.swift` | Mac window: Favorites and Search tabs, Now Playing bar, Rename sheet |
 | `macOS/StationTable.swift` | Mac station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
 | `macOS/Info.plist` | Mac app settings (name, ID, allowing http streams) |
 | `iOS/CrystalSetPhoneApp.swift` | iPhone app entry point |

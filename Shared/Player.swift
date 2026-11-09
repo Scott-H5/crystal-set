@@ -187,6 +187,13 @@ final class Player: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// Picks up a new name for the station playing, after it's renamed in Favorites.
+    func stationRenamed(_ renamed: Station) {
+        guard station?.id == renamed.id else { return }
+        station = renamed
+        updateNowPlayingInfo()
+    }
+
     /// Speaks the current station, state, show title, and sleep timer for VoiceOver users.
     /// Command-I.
     func announceStatus() {
@@ -507,6 +514,28 @@ enum StreamResolver {
 
         // If no stream is found inside, try the original address anyway.
         return firstStream(in: text) ?? url
+    }
+
+    /// Asks a stream for its station name, or returns nil if it doesn't say.
+    ///
+    /// Shoutcast and Icecast servers send the name in an "icy-name" header
+    /// at the start of the stream. This reads just the headers, then hangs
+    /// up, so no audio is downloaded.
+    static func stationName(at url: URL) async -> String? {
+        var request = URLRequest(url: url, timeoutInterval: 8)
+        request.setValue("CrystalSet/1.0", forHTTPHeaderField: "User-Agent")
+        // Asks the server for its "ICY" station details.
+        request.setValue("1", forHTTPHeaderField: "Icy-MetaData")
+        // `bytes(for:)` returns as soon as the headers arrive, before the audio.
+        guard let (bytes, response) = try? await URLSession.shared.bytes(for: request) else { return nil }
+        bytes.task.cancel()
+        guard let http = response as? HTTPURLResponse,
+              let name = http.value(forHTTPHeaderField: "icy-name")?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              // Some servers send a placeholder instead of a real name.
+              !name.isEmpty, name.lowercased() != "unspecified name", name.lowercased() != "no name"
+        else { return nil }
+        return name
     }
 
     /// Finds the first web address in a playlist's text, reading it line by line.

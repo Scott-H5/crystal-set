@@ -77,14 +77,14 @@ Then rebuild, and the app is back to normal.
 
 | File | What it does |
 | --- | --- |
-| `Shared/Models.swift` | The app's data and decisions: what a Station is, searching Radio Browser, the favorites list, and the actions (play, add, remove, move, next station, volume). Also `announce(_:)`, which makes VoiceOver speak. |
+| `Shared/Models.swift` | The app's data and decisions: what a Station is, searching Radio Browser (or looking up a pasted stream address), the favorites list, and the actions (play, add, remove, rename, move, next station, volume). Also `announce(_:)`, which makes VoiceOver speak. |
 | `Shared/Player.swift` | Sound: playing a stream, the playing/paused/stopped status, show titles, the sleep timer, the media keys and Lock Screen controls, and opening playlist links. |
 | `Shared/ImportExport.swift` | Reading and writing favorites as JSON files. |
 | `macOS/CrystalSetApp.swift` | Where the Mac version starts. Creates the AppModel, opens the window, and defines the menus and keyboard shortcuts. |
-| `macOS/ContentView.swift` | What's in the Mac window: the Favorites and Search tabs, the Now Playing bar, the Add Station sheet, and the Import/Export panels. |
+| `macOS/ContentView.swift` | What's in the Mac window: the Favorites and Search tabs, the Now Playing bar, the Rename sheet, and the Import/Export panels. |
 | `macOS/StationTable.swift` | The Mac's two station tables, including the keys and VoiceOver behavior on table rows. |
 | `iOS/CrystalSetPhoneApp.swift` | Where the iPhone version starts. Creates the AppModel and shows the tabs. |
-| `iOS/PhoneViews.swift` | The iPhone's screens: the Favorites, Search and Now Playing tabs, station rows and their VoiceOver actions, the Now Playing bar, and Add Station. |
+| `iOS/PhoneViews.swift` | The iPhone's screens: the Favorites, Search and Now Playing tabs, station rows and their VoiceOver actions, the Now Playing bar, and the Rename alert. |
 | `project.yml` | Describes the iPhone version for XcodeGen, which turns it into an Xcode project. |
 | `build.sh`, `ios.sh` | Build (and install) the Mac and iPhone versions. |
 

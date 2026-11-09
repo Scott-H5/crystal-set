@@ -64,7 +64,8 @@ struct StationCommands: Commands {
         // The File menu. `replacing: .newItem` swaps out the standard
         // "New Window" item for these.
         CommandGroup(replacing: .newItem) {
-            Button("Add Station…") { model.showingAddSheet = true }
+            // Shows the Search tab with an empty field to paste an address into.
+            Button("Add Station…") { model.startAddingStation() }
                 .keyboardShortcut("n")
             Button("Import Favorites…") { model.showingImporter = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
@@ -82,11 +83,11 @@ struct StationCommands: Commands {
                 .disabled(model.selectedStation == nil)
             Button("Pause or Resume") { model.player.togglePause() }
                 .keyboardShortcut("p")
-            // Dimmed while the Add Station sheet is open, because Command-Period
+            // Dimmed while the Rename sheet is open, because Command-Period
             // means Cancel there.
             Button("Stop") { model.player.stop() }
                 .keyboardShortcut(".")
-                .disabled(model.showingAddSheet)
+                .disabled(model.renamingStation != nil)
             Button("Reconnect") { model.player.reconnect() }
                 .keyboardShortcut("r")
 
@@ -143,6 +144,10 @@ struct StationCommands: Commands {
             Button("Move Favorite Down") { model.moveSelectedFavorite(by: 1) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
                 .disabled(arrowKeysBelongToText || model.tab != .favorites || model.favoriteSelection == nil)
+            Button("Rename Favorite…") {
+                model.renamingStation = model.favorites.first { $0.id == model.favoriteSelection }
+            }
+            .disabled(model.tab != .favorites || model.favoriteSelection == nil)
 
             Divider()
 
@@ -169,7 +174,7 @@ struct StationCommands: Commands {
     /// While typing in a text field, Command-arrow keys move the text cursor,
     /// so those menu items step aside (a disabled item passes the key through).
     private var arrowKeysBelongToText: Bool {
-        model.isEditingText || model.showingAddSheet
+        model.isEditingText || model.renamingStation != nil
     }
 
     // The Command-D menu item's title, depending on the selected station.

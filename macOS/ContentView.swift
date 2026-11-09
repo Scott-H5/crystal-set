@@ -2,12 +2,15 @@
 //
 // What you see in the main window, built with SwiftUI:
 //   - ContentView: the whole window. Favorites and Search tabs on top, the
-//     Now Playing bar along the bottom, plus the Add Station sheet, the
+//     Now Playing bar along the bottom, plus the Rename sheet, the
 //     Import and Export file panels, and the result alert.
 //   - FavoritesView: the Favorites tab.
 //   - SearchView: the Search tab.
 //   - NowPlayingBar: station name, status, Pause/Resume, Stop, sleep timer, volume.
-//   - AddStationSheet: the form for adding a station by its address.
+//   - RenameStationSheet: the form for renaming a favorite.
+//
+// There's no Add Station form: the Search field takes a stream address as
+// well as a name or tag, and shows it as a result you can play and add.
 //
 // How SwiftUI works, in short: each `View` has a `body` that *describes* what
 // to show, built from standard controls (Text, Button, TextField, Picker,
@@ -58,9 +61,10 @@ struct ContentView: View {
         }
         // The smallest the window can be, in points.
         .frame(minWidth: 780, minHeight: 460)
-        // The Add Station sheet slides down when model.showingAddSheet becomes true.
-        .sheet(isPresented: $model.showingAddSheet) {
-            AddStationSheet()
+        // The Rename sheet slides down when model.renamingStation is set,
+        // and `station` is the favorite being renamed.
+        .sheet(item: $model.renamingStation) { station in
+            RenameStationSheet(station: station)
                 .environmentObject(model)
         }
         // The Open panel for File > Import Favorites, limited to JSON files.
@@ -93,7 +97,7 @@ struct FavoritesView: View {
             if model.favorites.isEmpty {
                 // Spacers push the text to the middle.
                 Spacer()
-                Text("No favorites yet. Search for stations, add one by its stream address, or import a JSON favorites file.")
+                Text("No favorites yet. Use the Search tab to find stations by name or tag, or paste a stream address there. You can also import a JSON favorites file.")
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
                 Spacer()
@@ -113,6 +117,8 @@ struct FavoritesView: View {
                     .disabled(selected == nil)
                 Button("Remove") { if let selected { model.removeFromFavorites(selected) } }
                     .disabled(selected == nil)
+                Button("Rename…") { model.renamingStation = selected }
+                    .disabled(selected == nil)
                 // Dimmed for the first favorite, which can't move up.
                 Button("Move Up") { model.moveSelectedFavorite(by: -1) }
                     .disabled(selected == nil || model.favorites.first?.id == selected?.id)
@@ -121,7 +127,8 @@ struct FavoritesView: View {
                     .disabled(selected == nil || model.favorites.last?.id == selected?.id)
                 // Pushes the next buttons to the right-hand side.
                 Spacer()
-                Button("Add Station…") { model.showingAddSheet = true }
+                // Goes to the Search tab, where you paste the address.
+                Button("Add Station…") { model.startAddingStation() }
                 Button("Import…") { model.showingImporter = true }
                 Button("Export…") { model.showingExporter = true }
                     .disabled(model.favorites.isEmpty)
@@ -147,9 +154,12 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 // "Search for" is the field's label, which VoiceOver reads.
+                // The gray prompt inside the empty field says what it accepts.
                 // `.onSubmit` runs when you press Return in the field.
-                TextField("Search for", text: $model.query)
+                TextField("Search for", text: $model.query,
+                          prompt: Text("Name, tag, or stream address"))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityHint("A station name or tag, or a stream address starting with http")
                     .focused($searchFieldFocused)
                     .onSubmit { model.search() }
                 // A pop-up button with one choice per SearchField (Tag, Name).
@@ -165,11 +175,11 @@ struct SearchView: View {
                               || model.query.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            // Status text such as "114 stations found."
-            if !model.searchMessage.isEmpty {
-                Text(model.searchMessage)
-                    .foregroundStyle(.secondary)
-            }
+            // Status text such as "114 stations found.", or a tip before the first search.
+            Text(model.searchMessage.isEmpty
+                 ? "To add a station by its address, paste it here and press Return."
+                 : model.searchMessage)
+                .foregroundStyle(.secondary)
 
             StationTable(stations: model.results,
                          selection: $model.searchSelection,
@@ -277,60 +287,47 @@ struct NowPlayingBar: View {
     }
 }
 
-// MARK: - Add station sheet
+// MARK: - Rename sheet
 
-/// The form for adding a station by its stream address (Command-N).
-struct AddStationSheet: View {
+/// The form for renaming a favorite (Station > Rename Favorite…).
+struct RenameStationSheet: View {
     @EnvironmentObject private var model: AppModel
     // Closes the sheet when called.
     @Environment(\.dismiss) private var dismiss
-    // `@State` is a value this view keeps for itself: what's typed in each field.
+    let station: Station
+    // `@State` is a value this view keeps for itself: what's typed in the field.
     @State private var name = ""
-    @State private var url = ""
-
-    // True when both fields are filled in and the address starts with http or
-    // https. The Add button is dimmed until then.
-    private var isValid: Bool {
-        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let parsed = URL(string: trimmedURL),
-              let scheme = parsed.scheme?.lowercased() else { return false }
-        return (scheme == "http" || scheme == "https") && parsed.host != nil
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Marked as a heading, so VoiceOver's heading navigation finds it.
-            Text("Add Station")
+            Text("Rename \(station.name)")
                 .font(.title2)
                 .accessibilityAddTraits(.isHeader)
 
-            // A Form lines up labeled fields neatly.
+            // A Form lines up the labeled field neatly.
             Form {
                 TextField("Name", text: $name)
-                TextField("Stream URL", text: $url)
             }
-
-            Text("The stream address starts with http:// or https://. Playlist links ending in .pls or .m3u also work.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack {
                 Spacer()
                 // `.cancelAction` makes Escape and Command-Period press Cancel.
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                // `.defaultAction` makes Return press Add.
-                Button("Add") {
-                    model.addManual(name: name, url: url)
+                // `.defaultAction` makes Return press Rename.
+                Button("Rename") {
+                    model.renameFavorite(station, to: name)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!isValid)
+                // Dimmed while the name is empty.
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
         .frame(width: 460)
+        // Start with the current name in the field, ready to edit.
+        .onAppear { name = station.name }
     }
 }

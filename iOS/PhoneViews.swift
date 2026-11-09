@@ -2,14 +2,18 @@
 //
 // The iPhone version's screens, built with SwiftUI:
 //   - RootView: the three tabs (Favorites, Search, Now Playing), plus the
-//     Add Station sheet, the Import and Export file panels, the result
-//     alert, the sleep timer pop-up, and Magic Tap.
+//     Import and Export file panels, the result alert, the sleep timer
+//     pop-up, and Magic Tap.
 //   - SleepTimerPicker: the sleep timer choices, used in two places.
 //   - FavoritesScreen, SearchScreen, NowPlayingScreen: one per tab.
 //   - StationRow: one station in a list. Double-tap plays it; VoiceOver's
-//     Actions rotor (swipe up or down) offers the other actions.
+//     Actions rotor (swipe up or down) offers the other actions. In Edit
+//     mode, double-tapping a favorite renames it instead, and the rotor
+//     switches to Move Up, Move Down and Delete.
 //   - MiniPlayer: the Now Playing bar at the bottom of the lists.
-//   - AddStationScreen: the form for adding a station by its address.
+//
+// There's no Add Station form: the Search field takes a stream address as
+// well as a name or tag, and shows it as a result you can play and add.
 //
 // These screens use the same AppModel and Player as the Mac version, so
 // favorites, search, playback and the sleep timer all behave the same.
@@ -64,10 +68,6 @@ struct RootView: View {
         .onChange(of: model.tab) { _, newTab in
             tab = newTab == .favorites ? .favorites : .search
         }
-        .sheet(isPresented: $model.showingAddSheet) {
-            AddStationScreen()
-                .environmentObject(model)
-        }
         .fileImporter(isPresented: $model.showingImporter, allowedContentTypes: [.json]) { result in
             model.importFavorites(from: result)
         }
@@ -100,6 +100,11 @@ struct RootView: View {
 
 struct FavoritesScreen: View {
     @EnvironmentObject private var model: AppModel
+    // What's typed in the Rename alert's text field.
+    @State private var newName = ""
+    // Whether Edit mode is on. The Edit button turns it on and off; this
+    // screen keeps it itself (see `.environment` below) so it can tell.
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         // A NavigationStack gives the screen its title bar and toolbar.
@@ -110,7 +115,7 @@ struct FavoritesScreen: View {
                     ContentUnavailableView(
                         "No Favorites",
                         systemImage: "star",
-                        description: Text("Search for stations, add one by its stream address, or import a JSON favorites file. Both are in the More menu.")
+                        description: Text("Use the Search tab to find stations by name or tag, or paste a stream address there. You can also import a JSON favorites file from the More menu.")
                     )
                 } else {
                     List {
@@ -119,15 +124,31 @@ struct FavoritesScreen: View {
                         }
                         // In Edit mode, drag handles reorder and delete buttons remove.
                         .onMove { from, to in model.favorites.move(fromOffsets: from, toOffset: to) }
-                        .onDelete { offsets in
-                            for station in offsets.map({ model.favorites[$0] }) {
-                                model.removeFromFavorites(station)
-                            }
-                        }
+                        // The delete buttons are attached only in Edit mode (nil
+                        // means none). Otherwise iOS also adds its own swipe-to-
+                        // delete, which put a second Delete in VoiceOver's Actions
+                        // rotor beside the row's own Remove swipe action.
+                        .onDelete(perform: editMode.isEditing ? deleteFavorites : nil)
                     }
                 }
             }
             .navigationTitle("Favorites")
+            // The Rename alert, with a text field holding the current name.
+            // It opens when model.renamingStation is set (see StationRow).
+            .alert("Rename Station", isPresented: Binding(
+                get: { model.renamingStation != nil },
+                set: { if !$0 { model.renamingStation = nil } }
+            )) {
+                TextField("Name", text: $newName)
+                Button("Rename") {
+                    if let station = model.renamingStation { model.renameFavorite(station, to: newName) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            // Start the text field with the station's current name.
+            .onChange(of: model.renamingStation) { _, station in
+                if let station { newName = station.name }
+            }
             .toolbar {
                 // Edit mode, for reordering and deleting.
                 ToolbarItem(placement: .topBarLeading) {
@@ -142,7 +163,6 @@ struct FavoritesScreen: View {
 
                         Divider()
 
-                        Button("Add Station…", systemImage: "plus") { model.showingAddSheet = true }
                         Button("Import Favorites…", systemImage: "square.and.arrow.down") {
                             model.showingImporter = true
                         }
@@ -165,6 +185,21 @@ struct FavoritesScreen: View {
             }
             // The Now Playing bar along the bottom.
             .safeAreaInset(edge: .bottom) { MiniPlayer(player: model.player) }
+            // Hands Edit mode to the list, its rows and the Edit button.
+            // It comes after `.toolbar` so the Edit button uses it too.
+            .environment(\.editMode, $editMode)
+            // The Edit button hides when the list empties, so leave Edit mode
+            // then; otherwise the next favorite would appear mid-edit.
+            .onChange(of: model.favorites.isEmpty) { _, isEmpty in
+                if isEmpty { editMode = .inactive }
+            }
+        }
+    }
+
+    // Removes the favorites at these positions (Edit mode's delete buttons).
+    private func deleteFavorites(at offsets: IndexSet) {
+        for station in offsets.map({ model.favorites[$0] }) {
+            model.removeFromFavorites(station)
         }
     }
 }
@@ -178,7 +213,11 @@ struct SearchScreen: View {
         NavigationStack {
             List {
                 Section {
-                    TextField("Search for", text: $model.query)
+                    // VoiceOver reads the label "Search for"; the gray prompt
+                    // inside the empty field says what it accepts.
+                    TextField("Search for", text: $model.query,
+                              prompt: Text("Name, tag, or stream address"))
+                        .accessibilityHint("A station name or tag, or a stream address starting with http")
                         // The keyboard's Return key says "Search".
                         .submitLabel(.search)
                         .onSubmit { model.search() }
@@ -194,7 +233,11 @@ struct SearchScreen: View {
                                   || model.query.trimmingCharacters(in: .whitespaces).isEmpty)
                 } footer: {
                     // Status such as "114 stations found."
-                    if !model.searchMessage.isEmpty { Text(model.searchMessage) }
+                    if !model.searchMessage.isEmpty {
+                        Text(model.searchMessage)
+                    } else {
+                        Text("To add a station by its address, paste it here and tap Search.")
+                    }
                 }
 
                 if !model.results.isEmpty {
@@ -223,7 +266,9 @@ struct SearchScreen: View {
 ///
 /// The whole row is one button: double-tap plays the station. Its other
 /// actions are in VoiceOver's Actions rotor, in a context menu (touch and
-/// hold), and as swipe actions.
+/// hold), and as swipe actions. In Edit mode, double-tapping a favorite
+/// renames it instead. (Rename is left out of the Actions rotor on purpose,
+/// to keep that list short.)
 struct StationRow: View {
     @EnvironmentObject private var model: AppModel
     let station: Station
@@ -231,6 +276,13 @@ struct StationRow: View {
     @ObservedObject var player: Player
     // Favorites rows can be moved; search result rows can't.
     let inFavorites: Bool
+    // Whether the list is in Edit mode (the Edit button in the Favorites tab).
+    @Environment(\.editMode) private var editMode
+    // True while VoiceOver is running.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+
+    // True in Edit mode on a favorite, when double-tap renames instead of plays.
+    private var tapRenames: Bool { inFavorites && editMode?.wrappedValue.isEditing == true }
 
     // True while this row's station is the one connecting, playing or paused.
     private var isCurrent: Bool { player.station?.id == station.id && player.isActive }
@@ -242,7 +294,7 @@ struct StationRow: View {
 
     var body: some View {
         Button {
-            model.play(station)
+            if tapRenames { model.renamingStation = station } else { model.play(station) }
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -264,17 +316,31 @@ struct StationRow: View {
         }
         // VoiceOver reads this after the name, e.g. "Gunsmoke, Playing".
         .accessibilityValue(isCurrent ? player.state.description : "")
-        .accessibilityHint("Plays this station")
+        .accessibilityHint(tapRenames ? "Renames this station" : "Plays this station")
         // The Actions rotor. `if` lets an action appear only when it makes sense.
+        // It changes with the mode, to keep each list short:
+        //   - Favorites in Edit mode (tidying up): Move Up, Move Down, Delete.
+        //     Double-tap renames. Move Up is left off the first favorite and
+        //     Move Down off the last, since they can't go any further.
+        //   - Otherwise (listening): the swipe action a sighted person gets
+        //     (Remove on a favorite, Add to Favorites on a search result),
+        //     then Stop and Sleep Timer… on the station that's playing.
         .accessibilityActions {
-            Button(favoriteTitle) { toggleFavorite() }
-            if isCurrent {
-                Button("Stop") { player.stop() }
-                Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
-            }
-            if inFavorites {
-                Button("Move Up") { move(by: -1) }
-                Button("Move Down") { move(by: 1) }
+            if tapRenames {
+                if model.favorites.first?.id != station.id {
+                    Button("Move Up") { move(by: -1) }
+                }
+                if model.favorites.last?.id != station.id {
+                    Button("Move Down") { move(by: 1) }
+                }
+                Button("Delete") { model.removeFromFavorites(station) }
+            } else {
+                // Stands in for the swipe action (see `.swipeActions` below).
+                Button(swipeTitle) { swipeAction() }
+                if isCurrent {
+                    Button("Stop") { player.stop() }
+                    Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
+                }
             }
         }
         // Touch and hold.
@@ -286,15 +352,38 @@ struct StationRow: View {
             if isCurrent {
                 Button("Stop", systemImage: "stop") { player.stop() }
             }
-        }
-        // Swipe left on the row.
-        .swipeActions {
-            if model.isFavorite(station) {
-                Button("Remove", role: .destructive) { model.removeFromFavorites(station) }
-            } else {
-                Button("Add to Favorites") { model.addToFavorites(station) }
-                    .tint(.blue)
+            if inFavorites {
+                Button("Rename…", systemImage: "pencil") { model.renamingStation = station }
             }
+        }
+        // Swipe left on the row: Remove, or Add to Favorites.
+        // VoiceOver would normally list a swipe action in the Actions rotor,
+        // but SwiftUI listed it twice ("Remove, Remove, Activate"). So while
+        // VoiceOver is on, the swipe action is left off here and the rotor
+        // list above offers the same action once, with the same name.
+        .swipeActions {
+            if !voiceOverOn {
+                if model.isFavorite(station) {
+                    Button(swipeTitle, role: .destructive) { swipeAction() }
+                } else {
+                    Button(swipeTitle) { swipeAction() }
+                        .tint(.blue)
+                }
+            }
+        }
+    }
+
+    // The swipe action's name. "Remove", since it takes the station off
+    // your list rather than deleting anything.
+    private var swipeTitle: String {
+        model.isFavorite(station) ? "Remove" : "Add to Favorites"
+    }
+
+    private func swipeAction() {
+        if model.isFavorite(station) {
+            model.removeFromFavorites(station)
+        } else {
+            model.addToFavorites(station)
         }
     }
 
@@ -458,55 +547,5 @@ struct SleepTimerPicker: View {
             }
         }
         .pickerStyle(.menu)
-    }
-}
-
-// MARK: - Add station
-
-/// The form for adding a station by its stream address.
-struct AddStationScreen: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var url = ""
-
-    // Same check as the Mac version: a name, and an http or https address.
-    private var isValid: Bool {
-        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let parsed = URL(string: trimmedURL),
-              let scheme = parsed.scheme?.lowercased() else { return false }
-        return (scheme == "http" || scheme == "https") && parsed.host != nil
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Name", text: $name)
-                    TextField("Stream URL", text: $url)
-                        // A keyboard suited to web addresses.
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } footer: {
-                    Text("The stream address starts with http:// or https://. Playlist links ending in .pls or .m3u also work.")
-                }
-            }
-            .navigationTitle("Add Station")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        model.addManual(name: name, url: url)
-                        dismiss()
-                    }
-                    .disabled(!isValid)
-                }
-            }
-        }
     }
 }
