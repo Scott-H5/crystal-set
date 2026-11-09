@@ -62,10 +62,10 @@ struct StationCommands: Commands {
 
             Divider()
 
-            Button("Volume Up") { model.changeVolume(by: 0.1) }
+            Button("Volume Up") { model.changeVolume(by: 0.05) }
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(arrowKeysBelongToText)
-            Button("Volume Down") { model.changeVolume(by: -0.1) }
+            Button("Volume Down") { model.changeVolume(by: -0.05) }
                 .keyboardShortcut(.downArrow, modifiers: .command)
                 .disabled(arrowKeysBelongToText)
 

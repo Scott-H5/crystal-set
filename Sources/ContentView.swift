@@ -181,7 +181,7 @@ struct NowPlayingBar: View {
             Button("Stop") { player.stop() }
                 .disabled(!player.isActive)
 
-            Slider(value: $player.volume, in: 0...1) {
+            Slider(value: $player.volume, in: 0...1, step: 0.05) {
                 Text("Volume")
             }
             .frame(width: 170)

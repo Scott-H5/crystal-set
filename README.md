@@ -54,7 +54,7 @@ Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command
 | Stop | Command-Period |
 | Reconnect to the current stream | Command-R |
 | Next / previous station in the current list | Command-Right Arrow / Command-Left Arrow |
-| Volume up / down (10% steps) | Command-Up Arrow / Command-Down Arrow |
+| Volume up / down (5% steps) | Command-Up Arrow / Command-Down Arrow |
 | Speak what's playing | Command-I |
 | Select the playing station in its list | Command-L |
 

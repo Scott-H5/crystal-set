@@ -268,8 +268,8 @@ final class AppModel: ObservableObject {
     }
 
     func changeVolume(by step: Double) {
-        // Step in tenths, rounded so repeated presses land on 0%, 10%, … 100%.
-        let newVolume = min(1, max(0, ((player.volume + step) * 10).rounded() / 10))
+        // Rounded to 5% so repeated presses land on 0%, 5%, 10%, … 100%.
+        let newVolume = min(1, max(0, ((player.volume + step) * 20).rounded() / 20))
         player.volume = newVolume
         announce("Volume \(Int((newVolume * 100).rounded())) percent")
     }
