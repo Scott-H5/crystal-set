@@ -21,9 +21,9 @@ On iPhone, with VoiceOver:
 - Double-tap a station to play it.
 - The Actions rotor (swipe up or down) on a station offers Add to or Remove from Favorites, Stop (on the playing station), and Move Up and Move Down (in Favorites).
 - Magic Tap (a two-finger double-tap) pauses and resumes from anywhere in the app.
-- The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Change Sleep Timer.
+- The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Sleep Timer…, which opens a pop-up list of timer lengths. The station that's playing has Stop and Sleep Timer… in its Actions rotor too.
 - The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
-- The Favorites tab's More menu has Add Station, Import, Export, and a Sleep Timer submenu, so you can set the timer without leaving your favorites.
+- The Favorites tab's More menu starts with a Sleep Timer submenu, so you can set the timer without leaving your favorites, followed by Add Station, Import, and Export.
 
 ## Requirements
 
@@ -117,7 +117,7 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 
 ## Sleep timer
 
-Choose a length from Controls > Sleep Timer, from the Sleep timer pop-up button next to the volume slider, or press Command-T to step through the choices. Crystal Set says the new setting each time. The sound fades out over the last 30 seconds, then playback stops. Command-I includes the time left, and pressing Stop turns the timer off.
+Choose a length from Controls > Sleep Timer, from the Sleep timer pop-up button next to the volume slider, or press Command-T to step through the choices. Crystal Set says the new setting each time. The sound fades out over the last 30 seconds, then playback stops. Command-I includes the time left, and pressing Stop turns the timer off. While the stream is paused, the timer waits too, and picks up where it left off when you resume.
 
 ## Importing favorites
 

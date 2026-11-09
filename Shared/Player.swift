@@ -130,7 +130,8 @@ final class Player: ObservableObject {
         guard state == .playing || state == .connecting else { return }
         avPlayer.pause()
         state = .paused
-        announce("Paused")
+        // The sleep timer waits while the stream is paused (see startSleepTimer).
+        announce(sleepTimerMinutes > 0 ? "Paused. Sleep timer paused" : "Paused")
         updateNowPlayingInfo()
     }
 
@@ -219,10 +220,12 @@ final class Player: ObservableObject {
     // The background job that counts down, so it can be cancelled.
     private var sleepTask: Task<Void, Never>?
 
-    /// "Sleep timer: 23 minutes left", or nil when the timer is off.
+    /// "Sleep timer: 23 minutes left", "Sleep timer paused: 23 minutes left"
+    /// while the stream is paused, or nil when the timer is off.
     var sleepTimerDescription: String? {
         guard let left = sleepMinutesLeft else { return nil }
-        return left == 1 ? "Sleep timer: 1 minute left" : "Sleep timer: \(left) minutes left"
+        let label = state == .paused ? "Sleep timer paused" : "Sleep timer"
+        return left == 1 ? "\(label): 1 minute left" : "\(label): \(left) minutes left"
     }
 
     /// Starts a sleep timer for the given minutes; 0 turns it off.
@@ -250,21 +253,29 @@ final class Player: ObservableObject {
     func startSleepTimer(seconds: TimeInterval, minutes: Int) {
         cancelSleepTimer()
         sleepTimerMinutes = minutes
-        // The moment the timer should end.
-        let end = Date().addingTimeInterval(seconds)
-        updateSleepMinutesLeft(until: end)
+        // Seconds still to run. This counts down only while the stream isn't
+        // paused, so pausing for ten minutes doesn't use up ten minutes of the
+        // timer. (A fixed end time on the clock couldn't wait like that.)
+        updateSleepMinutesLeft(seconds)
 
         // Check the clock four times a second rather than sleeping for the whole
         // length, so the timer stays right across Mac sleep and the fade is smooth.
+        // Each check takes off the real time since the last one, unless paused.
         sleepTask = Task { [weak self] in
+            var left = seconds
+            var lastCheck = Date()
             while !Task.isCancelled {
                 guard let self else { return }
-                let left = end.timeIntervalSinceNow
+                let now = Date()
+                if self.state != .paused {
+                    left -= now.timeIntervalSince(lastCheck)
+                }
+                lastCheck = now
                 if left <= 0 {
                     self.finishSleepTimer()
                     return
                 }
-                self.updateSleepMinutesLeft(until: end)
+                self.updateSleepMinutesLeft(left)
                 // In the last `sleepFadeDuration` seconds, lower the output in
                 // step with the time left: half the time left, half the volume.
                 // The `volume` setting itself is untouched.
@@ -278,8 +289,8 @@ final class Player: ObservableObject {
     }
 
     // Updates the minutes-left value, but only when the whole number changes.
-    private func updateSleepMinutesLeft(until end: Date) {
-        let minutes = max(1, Int((end.timeIntervalSinceNow / 60).rounded(.up)))
+    private func updateSleepMinutesLeft(_ secondsLeft: TimeInterval) {
+        let minutes = max(1, Int((secondsLeft / 60).rounded(.up)))
         if sleepMinutesLeft != minutes { sleepMinutesLeft = minutes }
     }
 
