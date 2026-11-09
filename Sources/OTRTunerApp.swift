@@ -38,7 +38,8 @@ struct StationCommands: Commands {
         // No printing in this app; frees Command-P for Pause.
         CommandGroup(replacing: .printItem) {}
 
-        CommandMenu("Station") {
+        // Playback. Space in a station table also plays or pauses.
+        CommandMenu("Controls") {
             Button("Play Selected Station") { model.playSelected() }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(model.selectedStation == nil)
@@ -46,20 +47,46 @@ struct StationCommands: Commands {
                 .keyboardShortcut("p")
             Button("Stop") { model.player.stop() }
                 .keyboardShortcut(".")
-            Button("What's Playing") { model.player.announceStatus() }
-                .keyboardShortcut("i")
+                .disabled(model.showingAddSheet)  // Command-Period cancels the sheet
+            Button("Reconnect") { model.player.reconnect() }
+                .keyboardShortcut("r")
 
             Divider()
 
+            Button("Next Station") { model.playAdjacent(1) }
+                .keyboardShortcut(.rightArrow, modifiers: .command)
+                .disabled(arrowKeysBelongToText)
+            Button("Previous Station") { model.playAdjacent(-1) }
+                .keyboardShortcut(.leftArrow, modifiers: .command)
+                .disabled(arrowKeysBelongToText)
+
+            Divider()
+
+            Button("Volume Up") { model.changeVolume(by: 0.1) }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(arrowKeysBelongToText)
+            Button("Volume Down") { model.changeVolume(by: -0.1) }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(arrowKeysBelongToText)
+
+            Divider()
+
+            Button("What's Playing") { model.player.announceStatus() }
+                .keyboardShortcut("i")
+            Button("Show Current Station") { model.showCurrentStation() }
+                .keyboardShortcut("l")
+        }
+
+        CommandMenu("Station") {
             Button(favoriteToggleTitle) { model.toggleFavoriteForSelection() }
                 .keyboardShortcut("d")
                 .disabled(model.selectedStation == nil)
             Button("Move Favorite Up") { model.moveSelectedFavorite(by: -1) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                .disabled(model.tab != .favorites || model.favoriteSelection == nil)
+                .disabled(arrowKeysBelongToText || model.tab != .favorites || model.favoriteSelection == nil)
             Button("Move Favorite Down") { model.moveSelectedFavorite(by: 1) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                .disabled(model.tab != .favorites || model.favoriteSelection == nil)
+                .disabled(arrowKeysBelongToText || model.tab != .favorites || model.favoriteSelection == nil)
 
             Divider()
 
@@ -73,6 +100,12 @@ struct StationCommands: Commands {
             }
             .keyboardShortcut("f")
         }
+    }
+
+    /// While typing in a text field, Command-arrow keys move the text cursor,
+    /// so those menu items step aside (a disabled item passes the key through).
+    private var arrowKeysBelongToText: Bool {
+        model.isEditingText || model.showingAddSheet
     }
 
     private var favoriteToggleTitle: String {

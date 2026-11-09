@@ -147,6 +147,9 @@ final class AppModel: ObservableObject {
     @Published var showingImporter = false
     @Published var showingImportResult = false
     @Published var focusSearchField = false
+    /// True while a text field has focus, so arrow-key menu shortcuts
+    /// (Command-Left/Right/Up/Down) go to the text field instead.
+    @Published var isEditingText = false
     var importMessage = ""
 
     let player = Player()
@@ -201,6 +204,74 @@ final class AppModel: ObservableObject {
 
     func playSelected() {
         if let station = selectedStation { play(station) }
+    }
+
+    /// Plays the station, or pauses and resumes it if it's the one already playing.
+    func playOrPause(_ station: Station) {
+        guard player.station?.id == station.id else {
+            play(station)
+            return
+        }
+        switch player.state {
+        case .playing, .connecting, .paused:
+            player.togglePause()
+        case .stopped, .failed:
+            play(station)
+        }
+    }
+
+    /// The list shown in the current tab, and its selection.
+    private var currentList: [Station] { tab == .favorites ? favorites : results }
+
+    private var currentSelection: Station.ID? {
+        get { tab == .favorites ? favoriteSelection : searchSelection }
+        set {
+            if tab == .favorites { favoriteSelection = newValue } else { searchSelection = newValue }
+        }
+    }
+
+    /// Plays the next (+1) or previous (-1) station in the current tab's list.
+    func playAdjacent(_ offset: Int) {
+        let list = currentList
+        guard !list.isEmpty else {
+            announce(tab == .favorites ? "No favorites" : "No search results")
+            return
+        }
+        let anchor = currentSelection ?? player.station?.id
+        let index = anchor.flatMap { id in list.firstIndex { $0.id == id } }
+        let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : list.count - 1)
+        guard list.indices.contains(next) else {
+            announce(offset > 0 ? "Last station" : "First station")
+            return
+        }
+        currentSelection = list[next].id
+        play(list[next])
+    }
+
+    /// Selects the playing station in Favorites (or Search results) and shows that tab.
+    func showCurrentStation() {
+        guard let station = player.station else {
+            announce("Nothing playing")
+            return
+        }
+        if favorites.contains(where: { $0.id == station.id }) {
+            tab = .favorites
+            favoriteSelection = station.id
+        } else if results.contains(where: { $0.id == station.id }) {
+            tab = .search
+            searchSelection = station.id
+        } else {
+            announce("\(station.name) is not in Favorites or Search results")
+            return
+        }
+        announce("Selected \(station.name)")
+    }
+
+    func changeVolume(by step: Double) {
+        // Step in tenths, rounded so repeated presses land on 0%, 10%, … 100%.
+        let newVolume = min(1, max(0, ((player.volume + step) * 10).rounded() / 10))
+        player.volume = newVolume
+        announce("Volume \(Int((newVolume * 100).rounded())) percent")
     }
 
     // Favorites

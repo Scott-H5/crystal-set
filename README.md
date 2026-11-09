@@ -34,20 +34,42 @@ cp -R "build/OTR Tuner.app" /Applications/
 
 ## Keyboard shortcuts
 
+### In a station table (Favorites or Search results)
+
+| Action | Key |
+| --- | --- |
+| Play the selected station | Return, or double-click |
+| Play, or pause and resume if it's already playing | Space |
+| Remove the selected favorite | Delete (Favorites only) |
+| Play a station with VoiceOver | VO-Space on its row |
+
+Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space) with Play and Add to / Remove from Favorites.
+
+### Controls menu
+
 | Action | Shortcut |
 | --- | --- |
-| Play selected station | Command-Return, or Return / double-click in a table |
+| Play selected station | Command-Return |
 | Pause or resume | Command-P |
 | Stop | Command-Period |
+| Reconnect to the current stream | Command-R |
+| Next / previous station in the current list | Command-Right Arrow / Command-Left Arrow |
+| Volume up / down (10% steps) | Command-Up Arrow / Command-Down Arrow |
 | Speak what's playing | Command-I |
+| Select the playing station in its list | Command-L |
+
+The Command-arrow shortcuts are turned off while you're typing in a text field, so they still move the text cursor there.
+
+### Station and File menus
+
+| Action | Shortcut |
+| --- | --- |
 | Add or remove selected station from favorites | Command-D |
 | Move favorite up / down | Command-Option-Up Arrow / Down Arrow |
 | Show Favorites / Search | Command-1 / Command-2 |
 | Find stations (focus search field) | Command-F |
 | Add station by address | Command-N |
 | Import favorites | Command-Shift-I |
-
-With VoiceOver, VO-Space on a table row plays that station. Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space) with Play and Add to / Remove from Favorites.
 
 ## Importing favorites
 
@@ -69,7 +91,7 @@ Favorites are saved to `~/Library/Application Support/OTR Tuner/favorites.json`.
 | --- | --- |
 | `Sources/OTRTunerApp.swift` | App entry point and menu commands |
 | `Sources/ContentView.swift` | Window, Favorites and Search tabs, Now Playing bar, Add Station sheet |
-| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return and double-click play, context menu, VoiceOver actions |
+| `Sources/StationTable.swift` | AppKit station table: VO-Space, Return, Space and double-click play, Delete, context menu, VoiceOver actions |
 | `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
 | `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
 | `Sources/Importer.swift` | JSON favorites importer |

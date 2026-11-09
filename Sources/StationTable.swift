@@ -5,16 +5,18 @@ import SwiftUI
 
 /// A standard AppKit table of stations, wrapped for SwiftUI.
 ///
-/// AppKit is used here (instead of SwiftUI's Table) so each row can respond to
-/// VoiceOver's VO-Space by playing the station. The table also plays on Return
-/// or double-click, has a context menu (VO-Shift-M) with Play and Add to /
-/// Remove from Favorites, and lists the same items as VoiceOver actions
-/// (VO-Command-Space).
+/// AppKit is used here (instead of SwiftUI's Table) so the table can tell when
+/// VoiceOver selects a row (VO-Space) and play that station. The table also
+/// plays on Return, Space, or double-click; Delete removes a favorite; and it
+/// has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command-Space)
+/// with Play and Add to / Remove from Favorites.
 struct StationTable: NSViewRepresentable {
     @EnvironmentObject private var model: AppModel
     let stations: [Station]
     @Binding var selection: Station.ID?
     let title: String
+    /// Delete and Forward Delete remove the selected station (Favorites only).
+    var allowsDelete = false
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -150,6 +152,32 @@ struct StationTable: NSViewRepresentable {
             model?.play(station)
         }
 
+        /// Space: plays the station, or pauses and resumes it if it is already playing.
+        func playOrPause(row: Int) {
+            guard let station = station(at: row) else { return }
+            select(row: row)
+            model?.playOrPause(station)
+        }
+
+        /// VoiceOver's VO-Space selects a row through the accessibility API
+        /// rather than the keyboard or mouse; treat that as "play this station".
+        /// Both the table and the row may report the same selection, so ignore
+        /// a repeat for the same row within a second.
+        func accessibilitySelected(row: Int) {
+            let now = Date()
+            if row == lastAccessibilityRow, now.timeIntervalSince(lastAccessibilityTime) < 1 { return }
+            lastAccessibilityRow = row
+            lastAccessibilityTime = now
+            play(row: row)
+        }
+        private var lastAccessibilityRow = -1
+        private var lastAccessibilityTime = Date.distantPast
+
+        func delete(row: Int) {
+            guard parent?.allowsDelete == true, let station = station(at: row) else { return }
+            model?.removeFromFavorites(station)
+        }
+
         func toggleFavorite(row: Int) {
             guard let station = station(at: row), let model else { return }
             if model.isFavorite(station) {
@@ -255,12 +283,35 @@ final class StationNSTableView: NSTableView {
     weak var coordinator: StationTable.Coordinator?
 
     override func keyDown(with event: NSEvent) {
-        // 36 = Return, 76 = keypad Enter
-        if (event.keyCode == 36 || event.keyCode == 76), selectedRow >= 0,
-           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-            coordinator?.play(row: selectedRow)
-        } else {
+        let plain = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+        guard plain, selectedRow >= 0, let coordinator else {
             super.keyDown(with: event)
+            return
+        }
+        switch event.keyCode {
+        case 36, 76:   // Return, keypad Enter
+            coordinator.play(row: selectedRow)
+        case 49:       // Space
+            coordinator.playOrPause(row: selectedRow)
+        case 51, 117:  // Delete, Forward Delete
+            if coordinator.parent?.allowsDelete == true {
+                coordinator.delete(row: selectedRow)
+            } else {
+                super.keyDown(with: event)
+            }
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    /// Called when an assistive app (VoiceOver) changes the selection.
+    /// Keyboard and mouse selection don't come through here.
+    override func setAccessibilitySelectedRows(_ rows: [any NSAccessibilityRow]) {
+        super.setAccessibilitySelectedRows(rows)
+        if rows.count == 1, let rowView = rows.first as? StationRowView, let row = rowView.currentRow {
+            coordinator?.accessibilitySelected(row: row)
+        } else if rows.count == 1, selectedRow >= 0 {
+            coordinator?.accessibilitySelected(row: selectedRow)
         }
     }
 }
@@ -271,7 +322,14 @@ final class StationRowView: NSTableRowView {
     weak var coordinator: StationTable.Coordinator?
     var stationID: Station.ID?
 
-    private var row: Int? { coordinator?.row(for: stationID) }
+    var currentRow: Int? { coordinator?.row(for: stationID) }
+    private var row: Int? { currentRow }
+
+    /// VoiceOver selecting this row (VO-Space) plays it.
+    override func setAccessibilitySelected(_ selected: Bool) {
+        super.setAccessibilitySelected(selected)
+        if selected, let row { coordinator?.accessibilitySelected(row: row) }
+    }
 
     override func accessibilityPerformPress() -> Bool {
         guard let row else { return false }

@@ -94,6 +94,15 @@ final class Player: ObservableObject {
         }
     }
 
+    /// Reconnects to the current station, e.g. after the stream drops.
+    func reconnect() {
+        guard let station else {
+            announce("Nothing playing")
+            return
+        }
+        play(station)
+    }
+
     func togglePause() {
         if state == .playing || state == .connecting { pause() } else { resume() }
     }

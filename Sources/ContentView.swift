@@ -58,7 +58,8 @@ struct FavoritesView: View {
             } else {
                 StationTable(stations: model.favorites,
                              selection: $model.favoriteSelection,
-                             title: "Favorites")
+                             title: "Favorites",
+                             allowsDelete: true)
             }
 
             HStack {
@@ -132,6 +133,10 @@ struct SearchView: View {
         .onChange(of: model.focusSearchField) { wanted in
             if wanted { focusSearch() }
         }
+        .onChange(of: searchFieldFocused) { focused in
+            model.isEditingText = focused
+        }
+        .onDisappear { model.isEditingText = false }
     }
 
     private func focusSearch() {
