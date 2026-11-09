@@ -3,7 +3,7 @@
 // The iPhone version's screens, built with SwiftUI:
 //   - RootView: the three tabs (Favorites, Search, Now Playing), plus the
 //     Add Station sheet, the Import and Export file panels, the result
-//     alert, and Magic Tap.
+//     alert, the sleep timer pop-up, and Magic Tap.
 //   - SleepTimerPicker: the sleep timer choices, used in two places.
 //   - FavoritesScreen, SearchScreen, NowPlayingScreen: one per tab.
 //   - StationRow: one station in a list. Double-tap plays it; VoiceOver's
@@ -71,6 +71,23 @@ struct RootView: View {
         .fileImporter(isPresented: $model.showingImporter, allowedContentTypes: [.json]) { result in
             model.importFavorites(from: result)
         }
+        // The sleep timer pop-up, opened by "Sleep Timer…" in the Actions
+        // rotor of the Now Playing bar and of the station that's playing.
+        // The rotor can't hold a submenu, so this standard pop-up list
+        // (an "action sheet") stands in for one. Each choice is a button;
+        // the current one says so, since a pop-up can't show a checkmark.
+        .confirmationDialog("Sleep Timer", isPresented: $model.showingSleepTimerChoices,
+                            titleVisibility: .visible) {
+            ForEach([0] + Player.sleepTimerChoices, id: \.self) { minutes in
+                let name = minutes == 0 ? "Off" : "\(minutes) minutes"
+                Button(minutes == model.player.sleepTimerMinutes ? "\(name) (current)" : name) {
+                    model.player.setSleepTimer(minutes: minutes)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(model.player.sleepTimerDescription ?? "The sound fades out over the last 30 seconds, then playback stops.")
+        }
         .alert(model.resultTitle, isPresented: $model.showingImportResult) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -118,6 +135,13 @@ struct FavoritesScreen: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        // First in the menu, since it's the item used most at bedtime.
+                        // A submenu with a checkmark on the current choice, so the
+                        // timer can be set without going to the Now Playing tab.
+                        SleepTimerPicker(player: model.player)
+
+                        Divider()
+
                         Button("Add Station…", systemImage: "plus") { model.showingAddSheet = true }
                         Button("Import Favorites…", systemImage: "square.and.arrow.down") {
                             model.showingImporter = true
@@ -126,12 +150,6 @@ struct FavoritesScreen: View {
                             model.showingExporter = true
                         }
                         .disabled(model.favorites.isEmpty)
-
-                        Divider()
-
-                        // A submenu with a checkmark on the current choice, so the
-                        // timer can be set without going to the Now Playing tab.
-                        SleepTimerPicker(player: model.player)
                     } label: {
                         Label("More", systemImage: "ellipsis.circle")
                     }
@@ -252,6 +270,7 @@ struct StationRow: View {
             Button(favoriteTitle) { toggleFavorite() }
             if isCurrent {
                 Button("Stop") { player.stop() }
+                Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
             }
             if inFavorites {
                 Button("Move Up") { move(by: -1) }
@@ -303,7 +322,7 @@ struct StationRow: View {
 
 /// The Now Playing bar along the bottom of the Favorites and Search lists.
 /// Double-tap pauses or resumes; the Actions rotor has Stop, Next Station,
-/// Previous Station and Change Sleep Timer. Hidden when nothing is playing.
+/// Previous Station and Sleep Timer…. Hidden when nothing is playing.
 struct MiniPlayer: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var player: Player
@@ -352,7 +371,8 @@ struct MiniPlayer: View {
                 Button("Stop") { player.stop() }
                 Button("Next Station") { model.playAdjacent(1) }
                 Button("Previous Station") { model.playAdjacent(-1) }
-                Button("Change Sleep Timer") { player.cycleSleepTimer() }
+                // Opens the sleep timer pop-up (see RootView).
+                Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
             }
         }
     }

@@ -269,6 +269,9 @@ final class AppModel: ObservableObject {
     @Published var showingImporter = false
     @Published var showingImportResult = false
     @Published var showingExporter = false
+    /// iPhone only: the pop-up list of sleep timer lengths, opened from
+    /// the "Sleep Timer…" item in VoiceOver's Actions rotor.
+    @Published var showingSleepTimerChoices = false
     /// Title of the alert that reports an import or export result.
     var resultTitle = "Import Favorites"
     // Set to true to move the cursor into the search field (Command-F).
