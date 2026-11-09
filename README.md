@@ -72,3 +72,7 @@ Favorites are saved to `~/Library/Application Support/OTR Tuner/favorites.json`.
 | `Sources/Models.swift` | Station model, Radio Browser client, app state, VoiceOver announcements |
 | `Sources/Player.swift` | AVPlayer playback, stream title metadata, playlist resolution, media keys |
 | `Sources/Importer.swift` | JSON favorites importer |
+
+## License
+
+MIT. See [LICENSE](LICENSE).
