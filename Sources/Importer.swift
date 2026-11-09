@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - JSON favorites importer
 
@@ -92,8 +94,10 @@ extension AppModel {
     func importFavorites(from result: Result<URL, Error>) {
         switch result {
         case .failure(let error):
+            resultTitle = "Import Favorites"
             importMessage = "The file could not be opened. \(error.localizedDescription)"
         case .success(let fileURL):
+            resultTitle = "Import Favorites"
             let scoped = fileURL.startAccessingSecurityScopedResource()
             defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
             do {
@@ -134,5 +138,53 @@ extension AppModel {
                 : " \(skipped) were already in favorites."
         }
         return message
+    }
+}
+
+// MARK: - Exporting favorites
+
+/// Favorites saved as JSON in Crystal Set's own format, which keeps every
+/// field and can be imported again.
+struct FavoritesDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    var stations: [Station]
+
+    init(stations: [Station]) {
+        self.stations = stations
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        stations = try FavoritesImporter.stations(from: data)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: try Self.encode(stations))
+    }
+
+    static func encode(_ stations: [Station]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+        return try encoder.encode(stations)
+    }
+}
+
+extension AppModel {
+    var favoritesDocument: FavoritesDocument { FavoritesDocument(stations: favorites) }
+
+    func exportFinished(_ result: Result<URL, Error>) {
+        resultTitle = "Export Favorites"
+        switch result {
+        case .success(let url):
+            let count = favorites.count == 1 ? "1 station" : "\(favorites.count) stations"
+            importMessage = "Exported \(count) to \(url.lastPathComponent)."
+        case .failure(let error):
+            if (error as? CocoaError)?.code == .userCancelled { return }
+            importMessage = "The favorites could not be exported. \(error.localizedDescription)"
+        }
+        showingImportResult = true
     }
 }

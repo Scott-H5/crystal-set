@@ -35,6 +35,9 @@ struct StationCommands: Commands {
                 .keyboardShortcut("n")
             Button("Import Favorites…") { model.showingImporter = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+            Button("Export Favorites…") { model.showingExporter = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(model.favorites.isEmpty)
         }
         // No printing in this app; frees Command-P for Pause.
         CommandGroup(replacing: .printItem) {}

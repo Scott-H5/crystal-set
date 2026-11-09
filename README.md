@@ -5,7 +5,7 @@ A small, VoiceOver-friendly macOS app for listening to internet radio. It was bu
 - Search the free [Radio Browser](https://www.radio-browser.info) station directory by tag or name
 - Keep a reorderable list of favorite stations
 - Add any stream by its address, including `.pls` and `.m3u` playlist links
-- Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export
+- Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export, and export them as JSON
 - Shows the current show title when the stream sends one
 - Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
 - Works with the keyboard's media keys and Control Center's Now Playing
@@ -80,6 +80,7 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | Find stations (focus search field) | Command-F |
 | Add station by address | Command-N |
 | Import favorites | Command-Shift-I |
+| Export favorites | Command-Shift-E |
 
 ## Sleep timer
 
@@ -94,6 +95,10 @@ File > Import Favorites accepts a JSON file in any of these formats:
 - **Radio Browser API results:** an array of station objects with `stationuuid`
 
 Stations already in your favorites (same ID or same stream address) are skipped.
+
+## Exporting favorites
+
+File > Export Favorites (or the Export button in the Favorites tab) saves your favorites as a JSON file, named "Crystal Set Favorites" by default. It uses Crystal Set's own format, which keeps every field and can be imported again, so it works as a backup or for moving favorites to another Mac.
 
 ## Where data is stored
 

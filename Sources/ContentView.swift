@@ -17,6 +17,14 @@ struct ContentView: View {
                     .tag(AppModel.Tab.search)
             }
             .padding([.horizontal, .top])
+            // Kept on a different view from the importer: SwiftUI can mix up
+            // two file panels attached to the same view.
+            .fileExporter(isPresented: $model.showingExporter,
+                          document: model.favoritesDocument,
+                          contentType: .json,
+                          defaultFilename: "Crystal Set Favorites") { result in
+                model.exportFinished(result)
+            }
 
             Divider().padding(.top)
 
@@ -30,7 +38,7 @@ struct ContentView: View {
         .fileImporter(isPresented: $model.showingImporter, allowedContentTypes: [.json]) { result in
             model.importFavorites(from: result)
         }
-        .alert("Import Favorites", isPresented: $model.showingImportResult) {
+        .alert(model.resultTitle, isPresented: $model.showingImportResult) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.importMessage)
@@ -74,6 +82,8 @@ struct FavoritesView: View {
                 Spacer()
                 Button("Add Station…") { model.showingAddSheet = true }
                 Button("Import…") { model.showingImporter = true }
+                Button("Export…") { model.showingExporter = true }
+                    .disabled(model.favorites.isEmpty)
             }
         }
         .padding()

@@ -146,6 +146,9 @@ final class AppModel: ObservableObject {
     @Published var showingAddSheet = false
     @Published var showingImporter = false
     @Published var showingImportResult = false
+    @Published var showingExporter = false
+    /// Title of the alert that reports an import or export result.
+    var resultTitle = "Import Favorites"
     @Published var focusSearchField = false
     /// True while a text field has focus, so arrow-key menu shortcuts
     /// (Command-Left/Right/Up/Down) go to the text field instead.
