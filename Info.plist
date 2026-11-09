@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>OTR Tuner</string>
+	<string>Crystal Set</string>
 	<key>CFBundleExecutable</key>
-	<string>OTRTuner</string>
+	<string>CrystalSet</string>
 	<key>CFBundleIdentifier</key>
-	<string>io.github.scott-h5.otrtuner</string>
+	<string>io.github.scott-h5.crystalset</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>OTR Tuner</string>
+	<string>Crystal Set</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

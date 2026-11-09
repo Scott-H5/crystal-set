@@ -263,7 +263,7 @@ enum StreamResolver {
         guard ["pls", "m3u", "asx"].contains(ext) else { return url }
 
         var request = URLRequest(url: url, timeoutInterval: 15)
-        request.setValue("OTRTuner/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("CrystalSet/1.0", forHTTPHeaderField: "User-Agent")
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               data.count < 200_000,
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)

@@ -65,7 +65,7 @@ actor RadioBrowserClient {
 
     init() {
         let config = URLSessionConfiguration.default
-        config.httpAdditionalHeaders = ["User-Agent": "OTRTuner/1.0"]
+        config.httpAdditionalHeaders = ["User-Agent": "CrystalSet/1.0"]
         config.timeoutIntervalForRequest = 20
         session = URLSession(configuration: config)
     }
@@ -156,10 +156,19 @@ final class AppModel: ObservableObject {
     private let client = RadioBrowserClient()
 
     private var favoritesFile: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OTR Tuner", isDirectory: true)
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appendingPathComponent("Crystal Set", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("favorites.json")
+        let file = dir.appendingPathComponent("favorites.json")
+
+        // The app was first released as "OTR Tuner". Copy favorites saved
+        // under that name the first time, leaving the original in place.
+        let oldFile = support.appendingPathComponent("OTR Tuner/favorites.json")
+        if !FileManager.default.fileExists(atPath: file.path),
+           FileManager.default.fileExists(atPath: oldFile.path) {
+            try? FileManager.default.copyItem(at: oldFile, to: file)
+        }
+        return file
     }
 
     init() {

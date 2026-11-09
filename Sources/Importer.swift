@@ -3,7 +3,7 @@ import Foundation
 // MARK: - JSON favorites importer
 
 /// Reads station lists from JSON. Understands:
-/// - OTR Tuner's own favorites.json
+/// - Crystal Set's own favorites.json
 /// - Radio Browser API results (objects with "stationuuid")
 /// - Triode favorites exports, and similar lists of objects with "name" and "url"
 enum FavoritesImporter {

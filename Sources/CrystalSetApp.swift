@@ -1,12 +1,12 @@
 import SwiftUI
 
 @main
-struct OTRTunerApp: App {
+struct CrystalSetApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        Window("OTR Tuner", id: "main") {
+        Window("Crystal Set", id: "main") {
             ContentView()
                 .environmentObject(model)
         }
