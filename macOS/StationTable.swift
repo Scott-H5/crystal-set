@@ -418,7 +418,17 @@ final class StationNSTableView: NSTableView {
     /// Keyboard and mouse selection don't come through here.
     override func setAccessibilitySelectedRows(_ rows: [any NSAccessibilityRow]) {
         super.setAccessibilitySelectedRows(rows)
-        if rows.count == 1, let rowView = rows.first as? StationRowView, let row = rowView.currentRow {
+        // Read the row through NSArray, never `rows.first` or `rows[0]`.
+        //
+        // Why: VoiceOver hands us an Objective-C array, and Swift only checks
+        // each item's type when we take it out. Right after favorites are
+        // reordered, VoiceOver can still be holding an old object that isn't a
+        // proper table row. Swift's type check then fails, and that failure
+        // crashes the app instead of returning nil. (Crash report frame:
+        // `_ArrayBuffer._getElementSlowPath`.) Going through NSArray skips that
+        // check, so `as? StationRowView` just gives nil for an odd object.
+        let first = (rows as NSArray).firstObject
+        if rows.count == 1, let rowView = first as? StationRowView, let row = rowView.currentRow {
             coordinator?.accessibilitySelected(row: row)
         } else if rows.count == 1, selectedRow >= 0 {
             coordinator?.accessibilitySelected(row: selectedRow)
