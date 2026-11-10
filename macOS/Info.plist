@@ -12,6 +12,9 @@
 	<string>io.github.scott-h5.crystalset</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- The app icon, macOS/AppIcon.icns (drawn by icon/make-icon.sh). -->
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleName</key>
 	<string>Crystal Set</string>
 	<key>CFBundlePackageType</key>

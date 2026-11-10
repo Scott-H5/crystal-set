@@ -25,6 +25,8 @@ esac
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp macOS/Info.plist "$APP/Contents/Info.plist"
+# The app icon, drawn by icon/make-icon.sh. Info.plist names it (CFBundleIconFile).
+cp macOS/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 xcrun swiftc -O -swift-version 5 -parse-as-library \
   -target "${ARCH}-apple-macos13.0" -sdk "$SDK" \

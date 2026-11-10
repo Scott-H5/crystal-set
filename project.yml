@@ -39,6 +39,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.scott-h5.crystalset
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        # The app icon in iOS/Assets.xcassets (drawn by icon/make-icon.sh).
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # 1 is iPhone, 2 is iPad.
         TARGETED_DEVICE_FAMILY: "1,2"
     # XcodeGen writes these settings into iOS/Info.plist.
