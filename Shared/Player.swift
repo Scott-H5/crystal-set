@@ -72,13 +72,62 @@ final class Player: ObservableObject {
     private var metadataDelegate: MetadataDelegate?
     // The background job that opens a stream, so it can be cancelled.
     private var loadTask: Task<Void, Never>?
+    // True after the person pauses (Pause button, Command-P, headphones,
+    // lock screen). Lets interruption handling tell "you paused it" apart
+    // from "a phone call paused it", since both leave `state` at `.paused`.
+    private var pausedByUser = false
+
+    // Automatic reconnecting (see connectionLost). When a station that was
+    // playing drops, the Player waits a moment and connects again, waiting
+    // a little longer after each failed try, then gives up.
+    /// Seconds to wait before each try. Five tries, about 40 seconds in all,
+    /// covers a Wi-Fi to cellular switch or a server restart.
+    private static let reconnectDelays: [UInt64] = [1, 3, 5, 10, 20]
+    // How many tries have been used since the stream last played steadily.
+    private var reconnectAttempts = 0
+    // The waiting-then-reconnecting job, so Pause or Stop can cancel it.
+    private var reconnectTask: Task<Void, Never>?
+    // True from a drop until sound comes back, so success says "Reconnected".
+    private var isReconnecting = false
+    // True once this station has played at all. A station that never
+    // played is just a bad address, so it fails at once instead of retrying.
+    private var hasPlayed = false
+    // When sound last started. After a minute of steady play, a later drop
+    // gets the full five tries again.
+    private var playingSince: Date?
+    // The "no sound for too long" watchdog (see watchForStall).
+    private var stallTask: Task<Void, Never>?
+    // True while a stream is being opened. AVPlayer reports "paused" during
+    // that time, which mustn't be mistaken for someone pausing it.
+    private var isOpeningStream = false
+    // Watch for the stream ending or erroring part way through.
+    private var endObservers: [AnyCancellable] = []
+    #if os(iOS)
+    // Set when a phone call, Siri or an alarm cuts in while a station is on,
+    // so it can start again when the interruption ends.
+    private var resumeAfterInterruption = false
+    // Keeps the interruption watcher alive (see watchForInterruptions).
+    private var interruptionObserver: NSObjectProtocol?
+    #endif
 
     init() {
         #if os(iOS)
         // Tell iOS this app plays audio, so it keeps playing when the screen
         // locks or you switch apps, and isn't silenced by the ring/silent switch.
         // (Info.plist also lists "audio" under background modes.)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        //
+        // `policy: .longFormAudio` is Apple's setting for radio, podcasts and
+        // audiobooks, the same one Music and Podcasts use. It tells iOS this
+        // is something you listen to for a long time. iOS then handles it
+        // like those apps: the sound goes to the same output (AirPods, car,
+        // AirPlay) and shares more smoothly with VoiceOver's speech when
+        // ducking. With the general-audio default, swiping through the
+        // Actions rotor gave a slight glitch in VoiceOver's speech; this
+        // setting made it smaller. A faint glitch is left, but Triode does the
+        // same with the same stations, so it's iOS's ducking, not this app.
+        // Turning off VoiceOver's Audio Ducking removes it completely.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
+        watchForInterruptions()
         #endif
         avPlayer.volume = Float(volume)
         // Watch AVPlayer's own status (playing, waiting for data, paused) and
@@ -103,14 +152,36 @@ final class Player: ObservableObject {
     /// state goes to `.connecting`, then to `.playing` once sound arrives
     /// (see timeControlChanged), or to `.failed` if the stream can't be opened.
     func play(_ station: Station) {
-        // Cancel any stream still being opened, and silence the current one.
+        // A fresh start: forget any earlier pause, call or dropped stream.
+        pausedByUser = false
+        #if os(iOS)
+        resumeAfterInterruption = false
+        #endif
+        reconnectAttempts = 0
+        isReconnecting = false
+        hasPlayed = false
+        playingSince = nil
+        connect(station, quietly: false)
+    }
+
+    /// Opens a station's stream. Shared by play(_:) and automatic reconnecting.
+    /// `quietly` skips the "Connecting to…" announcement and keeps the show
+    /// title, so a reconnect doesn't chatter or blank the screen.
+    private func connect(_ station: Station, quietly: Bool) {
+        // Cancel any stream still being opened or waiting to reconnect,
+        // and silence the current one.
         loadTask?.cancel()
+        reconnectTask?.cancel()
+        reconnectTask = nil
         avPlayer.pause()
+        isOpeningStream = true
         self.station = station
-        streamTitle = ""
+        if !quietly { streamTitle = "" }
         state = .connecting
-        announce("Connecting to \(station.name)")
+        if !quietly { announce("Connecting to \(station.name)") }
         updateNowPlayingInfo()
+        // Give up on this try if no sound arrives in 20 seconds.
+        watchForStall(seconds: 20)
 
         loadTask = Task { [weak self] in
             // Turn a playlist link into the real stream address (see StreamResolver).
@@ -127,7 +198,16 @@ final class Player: ObservableObject {
     }
 
     func pause() {
+        // Pressing Pause, even during a phone call, means "stay paused",
+        // so cancel any plan to resume when the call ends.
+        pausedByUser = true
+        #if os(iOS)
+        resumeAfterInterruption = false
+        #endif
         guard state == .playing || state == .connecting else { return }
+        // Also stop any stream being opened or reconnect waiting to happen,
+        // so sound can't start again by itself after you pause.
+        cancelBackgroundWork()
         avPlayer.pause()
         state = .paused
         // The sleep timer waits while the stream is paused (see startSleepTimer).
@@ -176,12 +256,11 @@ final class Player: ObservableObject {
 
     // The part of stopping shared by stop() and the sleep timer. It speaks nothing.
     private func stopPlayback() {
-        loadTask?.cancel()
-        avPlayer.pause()
-        // Let go of the stream entirely, so it stops downloading.
-        avPlayer.replaceCurrentItem(with: nil)
-        itemObserver = nil
-        metadataDelegate = nil
+        #if os(iOS)
+        resumeAfterInterruption = false
+        #endif
+        cancelBackgroundWork()
+        releaseStream()
         state = .stopped
         streamTitle = ""
         updateNowPlayingInfo()
@@ -346,16 +425,40 @@ final class Player: ObservableObject {
         item.add(output)
         metadataDelegate = delegate
 
-        // Watch for the stream failing to open, and report why.
+        // Watch for the stream failing, and report why. A station that has
+        // played before is reconnected instead (see connectionLost).
         itemObserver = item.publisher(for: \.status)
             .receive(on: DispatchQueue.main)
             .sink { [weak self, weak item] status in
                 MainActor.assumeIsolated {
-                    guard status == .failed else { return }
-                    let reason = item?.error?.localizedDescription ?? "the stream could not be opened."
-                    self?.fail(reason)
+                    guard status == .failed, let self, let item, item === self.avPlayer.currentItem else { return }
+                    self.connectionLost(item.error?.localizedDescription ?? "the stream could not be opened.")
                 }
             }
+
+        // A live stream never "ends", so reaching the end means the server
+        // hung up. "Failed to play to end" means a network error part way.
+        // The `===` checks ignore late notices from a stream already replaced.
+        let center = NotificationCenter.default
+        endObservers = [
+            center.publisher(for: AVPlayerItem.didPlayToEndTimeNotification, object: item)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak item] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let item, item === self.avPlayer.currentItem else { return }
+                        self.connectionLost("the station stopped sending audio.")
+                    }
+                },
+            center.publisher(for: AVPlayerItem.failedToPlayToEndTimeNotification, object: item)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self, weak item] note in
+                    MainActor.assumeIsolated {
+                        guard let self, let item, item === self.avPlayer.currentItem else { return }
+                        let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+                        self.connectionLost(error?.localizedDescription ?? "the connection was lost.")
+                    }
+                },
+        ]
 
         avPlayer.replaceCurrentItem(with: item)
         avPlayer.play()
@@ -363,34 +466,135 @@ final class Player: ObservableObject {
 
     // Stops and reports a problem, such as a stream that won't open.
     private func fail(_ reason: String) {
-        avPlayer.pause()
-        avPlayer.replaceCurrentItem(with: nil)
+        cancelBackgroundWork()
+        releaseStream()
         state = .failed(reason)
         announce(state.description)
         updateNowPlayingInfo()
+    }
+
+    // Cancels the jobs that could start sound again on their own: opening a
+    // stream, waiting to reconnect, and the stall watchdog.
+    private func cancelBackgroundWork() {
+        loadTask?.cancel()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        stallTask?.cancel()
+        stallTask = nil
+        isOpeningStream = false
+        isReconnecting = false
+    }
+
+    // Silences and lets go of the current stream, so it stops downloading.
+    private func releaseStream() {
+        avPlayer.pause()
+        avPlayer.replaceCurrentItem(with: nil)
+        itemObserver = nil
+        endObservers = []
+        metadataDelegate = nil
+    }
+
+    // MARK: Reconnecting
+
+    /// Starts a countdown; if the station is still connecting (no sound) when
+    /// it runs out, the connection is treated as lost.
+    ///
+    /// Why it's needed: when the network goes away, AVPlayer often doesn't
+    /// report an error at all. It just waits for more data, forever. This
+    /// turns that endless wait into a reconnect.
+    private func watchForStall(seconds: UInt64) {
+        stallTask?.cancel()
+        stallTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+            guard let self, !Task.isCancelled, self.state == .connecting else { return }
+            self.stallTask = nil
+            self.connectionLost(self.hasPlayed
+                ? "the stream stopped sending audio."
+                : "the station did not respond.")
+        }
+    }
+
+    /// Called when the stream errors, ends, or goes silent too long.
+    ///
+    /// A station that never played fails straight away; it's probably a bad
+    /// address, and retrying would only make you wait. A station that *was*
+    /// playing gets up to five more tries, spaced out by reconnectDelays.
+    /// Only the first drop is announced ("Connection lost. Reconnecting"), so
+    /// VoiceOver isn't interrupted on every try; success says "Reconnected".
+    private func connectionLost(_ reason: String) {
+        // Pause and Stop cancel reconnecting, so only a station that's meant
+        // to be on (playing or connecting) is reconnected.
+        guard let station, state == .playing || state == .connecting else { return }
+        guard hasPlayed else {
+            fail(reason)
+            return
+        }
+        // A stream that played steadily for a minute has earned all five tries again.
+        if let since = playingSince, Date().timeIntervalSince(since) > 60 {
+            reconnectAttempts = 0
+        }
+        playingSince = nil
+        guard reconnectAttempts < Self.reconnectDelays.count else {
+            fail("lost the connection and could not reconnect.")
+            return
+        }
+        let delay = Self.reconnectDelays[reconnectAttempts]
+        if reconnectAttempts == 0 { announce("Connection lost. Reconnecting") }
+        reconnectAttempts += 1
+
+        // Drop the dead stream now and show Connecting while we wait.
+        cancelBackgroundWork()
+        releaseStream()
+        isReconnecting = true
+        state = .connecting
+        updateNowPlayingInfo()
+
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            // Give up if Pause, Stop or another station came first.
+            guard let self, !Task.isCancelled, self.station?.id == station.id else { return }
+            self.reconnectTask = nil
+            self.connect(station, quietly: true)
+        }
     }
 
     // Called whenever AVPlayer's own status changes.
     private func timeControlChanged(_ status: AVPlayer.TimeControlStatus) {
         switch status {
         case .playing:
-            // Sound is coming out.
+            // Sound is coming out, so the stream is healthy: call off the watchdog.
+            stallTask?.cancel()
+            stallTask = nil
+            isOpeningStream = false
+            hasPlayed = true
             if state != .playing {
                 let wasConnecting = state == .connecting
                 state = .playing
-                // Say "Playing" only when a new connection succeeds, not after
-                // every brief pause to wait for more data.
-                if wasConnecting, let station { announce("Playing \(station.name)") }
+                playingSince = Date()
+                // Speak only when a connection succeeds, not after every brief
+                // wait for more data. After a drop, say it came back.
+                if isReconnecting {
+                    isReconnecting = false
+                    announce("Reconnected")
+                } else if wasConnecting, let station {
+                    announce("Playing \(station.name)")
+                }
                 updateNowPlayingInfo()
             }
         case .waitingToPlayAtSpecifiedRate:
             // The stream ran short of data and is waiting for more (buffering).
-            if state == .playing { state = .connecting }
+            // Usually that's a second or two; if it lasts 15, reconnect.
+            if state == .playing {
+                state = .connecting
+                watchForStall(seconds: 15)
+            }
         case .paused:
             // Something else paused the audio, such as a phone call, Siri,
             // another app starting to play, or headphones being unplugged.
             // (Crystal Set's own pause() changes `state` first, so this
-            // doesn't affect it.)
+            // doesn't affect it.) AVPlayer also says "paused" while a stream
+            // is being opened or a reconnect is waiting; those are ignored.
+            guard !isOpeningStream, reconnectTask == nil else { break }
             if state == .playing || state == .connecting {
                 state = .paused
                 updateNowPlayingInfo()
@@ -400,6 +604,65 @@ final class Player: ObservableObject {
             break
         }
     }
+
+    // MARK: Interruptions (iPhone)
+
+    #if os(iOS)
+    /// Starts the station again after a phone call, FaceTime call, Siri or an
+    /// alarm, the way the Music app does.
+    ///
+    /// How it works: iOS posts an "interruption" notice when the call starts
+    /// and another when it ends. iOS has already paused the audio by then
+    /// (timeControlChanged shows that as Paused), so all we do is remember,
+    /// at the start, whether a station was on, then resume it at the end.
+    ///
+    /// iOS adds a "should resume" hint to the end notice. It leaves the hint
+    /// off when another app took over the sound on purpose, such as you
+    /// starting a podcast, and then Crystal Set stays paused. resume() opens
+    /// the live feed again rather than picking up minutes-old audio.
+    private func watchForInterruptions() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            // The notice's details come as a dictionary of numbers; these lines
+            // turn them back into Apple's named values.
+            let info = note.userInfo ?? [:]
+            guard let rawType = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
+            let rawOptions = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            MainActor.assumeIsolated {
+                self?.interruption(type, shouldResume: shouldResume)
+            }
+        }
+    }
+
+    private func interruption(_ type: AVAudioSession.InterruptionType, shouldResume: Bool) {
+        switch type {
+        case .began:
+            // `state` may already read Paused if iOS's pause arrived first;
+            // pausedByUser tells that apart from you pressing Pause.
+            resumeAfterInterruption = station != nil && !pausedByUser
+                && (state == .playing || state == .connecting || state == .paused)
+            // A call isn't a dropped stream: stop any reconnect or stream
+            // being opened, so it doesn't try to play during the call.
+            if state == .connecting {
+                cancelBackgroundWork()
+                avPlayer.pause()
+                state = .paused
+                updateNowPlayingInfo()
+            }
+        case .ended:
+            guard resumeAfterInterruption else { return }
+            resumeAfterInterruption = false
+            if shouldResume { resume() }
+        @unknown default:
+            break
+        }
+    }
+    #endif
 
     // MARK: Media keys and Now Playing
 

@@ -21,7 +21,7 @@ Crystal Set is written in **Swift**, Apple's programming language. It comes in t
 
 ### Opening the code
 
-The code is in three folders inside the project folder, `~/Projects/crystal-set`:
+The code is in three folders inside the project folder, `~/dev/crystal-set`:
 
 - `Shared`: code both versions use.
 - `macOS`: the Mac's window, menus and tables.
@@ -36,7 +36,7 @@ Every file begins with a few comment lines saying what it's for, and the file's 
 ### Rebuilding after a change
 
 ```bash
-bash ~/Projects/crystal-set/build.sh install
+bash ~/dev/crystal-set/build.sh install
 ```
 
 This builds the Mac app and installs it in Applications. If the app is running, it quits it first and reopens it afterwards. If you made a mistake, the build stops and shows an error instead; see section 9.
@@ -44,7 +44,7 @@ This builds the Mac app and installs it in Applications. If the app is running, 
 For the iPhone, connect it with a cable, unlock it, and run:
 
 ```bash
-bash ~/Projects/crystal-set/ios.sh install
+bash ~/dev/crystal-set/ios.sh install
 ```
 
 A change in the `Shared` folder affects both versions, so rebuild both to try it.
@@ -56,19 +56,19 @@ The project uses **git**, which remembers every saved version. Nothing you try c
 To see which files you've changed:
 
 ```bash
-git -C ~/Projects/crystal-set status
+git -C ~/dev/crystal-set status
 ```
 
 To see exactly what changed, line by line:
 
 ```bash
-git -C ~/Projects/crystal-set diff
+git -C ~/dev/crystal-set diff
 ```
 
 To throw away all your changes and go back to the last saved version:
 
 ```bash
-git -C ~/Projects/crystal-set restore .
+git -C ~/dev/crystal-set restore .
 ```
 
 Then rebuild, and the app is back to normal.

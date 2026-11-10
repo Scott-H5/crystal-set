@@ -19,6 +19,9 @@
 // each platform's user interface toolkit; they're needed here only for
 // VoiceOver announcements.
 import Foundation
+// MediaPlayer provides the Next and Previous Track commands used by the
+// lock screen, Control Center and headphones.
+import MediaPlayer
 // `#if os(macOS)` includes the lines up to `#else` only when building for
 // the Mac; the lines after `#else` are used for the iPhone instead.
 #if os(macOS)
@@ -313,6 +316,67 @@ final class AppModel: ObservableObject {
            let saved = try? JSONDecoder().decode([Station].self, from: data) {
             favorites = saved
             favoriteSelection = saved.first?.id
+        }
+        setUpTrackCommands()
+    }
+
+    // MARK: Next and Previous from outside the app
+
+    /// Turns on Next Track and Previous Track for the lock screen, Control
+    /// Center, headphones and the keyboard's media keys.
+    ///
+    /// Why here and not in Player.swift with Play and Pause: the Player plays
+    /// one station and doesn't know about any list. Choosing the "next"
+    /// station needs the favorites (or search results), and those live here.
+    ///
+    /// iOS dims any button whose command has no target ("addTarget"), which
+    /// is why Next and Previous were greyed out on the lock screen before.
+    ///
+    /// Headphones send the same commands: on AirPods and wired EarPods a
+    /// double press is Next Track and a triple press is Previous Track.
+    private func setUpTrackCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.nextTrackCommand.isEnabled = true
+        center.previousTrackCommand.isEnabled = true
+        // These targets run on the main thread already, but Swift can't
+        // know that, so `assumeIsolated` says so (it would stop if wrong).
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            MainActor.assumeIsolated { self?.playAdjacentFromRemote(+1) }
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            MainActor.assumeIsolated { self?.playAdjacentFromRemote(-1) }
+            return .success
+        }
+    }
+
+    /// Next (+1) or previous (-1) station, for the lock screen and headphones.
+    ///
+    /// This is different from playAdjacent (Command-Arrow), which steps through
+    /// the selected row in the tab on screen. From the lock screen you can't
+    /// see the screen, so this steps from the *playing* station, through
+    /// whichever list it's in (favorites first). It also wraps around from the
+    /// last station to the first, so a press always plays something instead of
+    /// silently doing nothing at the end of the list.
+    private func playAdjacentFromRemote(_ offset: Int) {
+        let playingID = player.station?.id
+        let list: [Station]
+        if let playingID, results.contains(where: { $0.id == playingID }),
+           !favorites.contains(where: { $0.id == playingID }) {
+            list = results
+        } else {
+            list = favorites
+        }
+        guard !list.isEmpty else { return }
+        let index = playingID.flatMap { id in list.firstIndex { $0.id == id } }
+        // With nothing playing from this list, start at the first (or last) station.
+        let next = index.map { ($0 + offset + list.count) % list.count }
+            ?? (offset > 0 ? 0 : list.count - 1)
+        if list == favorites { favoriteSelection = list[next].id } else { searchSelection = list[next].id }
+        player.play(list[next])
+        if list[next].isFromRadioBrowser {
+            let id = list[next].id
+            Task { await client.countClick(id) }
         }
     }
 

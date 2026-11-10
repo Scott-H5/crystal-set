@@ -8,7 +8,9 @@ A small, VoiceOver-friendly internet radio app for the Mac and iPhone. It was bu
 - Import favorites from a JSON file, including a [Triode](https://triode.app) favorites export, and export them as JSON
 - Shows the current show title when the stream sends one
 - Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
-- Works with the keyboard's media keys, the Lock Screen, and Control Center's Now Playing
+- Works with the keyboard's media keys, the Lock Screen, and Control Center's Now Playing. Next and Previous step through your favorites, and on AirPods and EarPods a double press is Next and a triple press is Previous
+- Reconnects on its own when a stream drops or goes silent: five tries over about 40 seconds. It says "Connection lost. Reconnecting" once, then "Reconnected" when sound is back
+- On iPhone, picks the station back up after a phone call, Siri or an alarm, unless you paused it yourself
 
 The Mac and iPhone versions share their stations, search, playback, sleep timer, and import and export code; only the screens differ. Favorites don't sync between them yet, but you can export them on one and import them on the other.
 
@@ -38,7 +40,7 @@ There is no Xcode project for the Mac version. The build script compiles the sou
 To build and install in one step:
 
 ```bash
-bash ~/Projects/crystal-set/build.sh install
+bash ~/dev/crystal-set/build.sh install
 ```
 
 This builds the app, quits Crystal Set if it's running, replaces the copy in `/Applications`, and reopens it if it was running.
@@ -46,12 +48,12 @@ This builds the app, quits Crystal Set if it's running, replaces the copy in `/A
 To build without installing:
 
 ```bash
-bash ~/Projects/crystal-set/build.sh
+bash ~/dev/crystal-set/build.sh
 ```
 
 The app is written to `build/Crystal Set.app` in the project folder.
 
-(Adjust the path if you cloned the project somewhere other than `~/Projects/crystal-set`.)
+(Adjust the path if you cloned the project somewhere other than `~/dev/crystal-set`.)
 
 ## Build the iPhone version
 
@@ -62,13 +64,13 @@ The iPhone version is described in `project.yml`. The script `ios.sh` turns that
 3. Build and install:
 
    ```bash
-   bash ~/Projects/crystal-set/ios.sh install
+   bash ~/dev/crystal-set/ios.sh install
    ```
 
    To build without installing:
 
    ```bash
-   bash ~/Projects/crystal-set/ios.sh
+   bash ~/dev/crystal-set/ios.sh
    ```
 
 4. With a free Apple ID (a "Personal Team"), the first time you open the app iOS says the developer isn't trusted. Go to Settings > General > VPN & Device Management, choose your Apple ID under Developer App, and choose Trust.
@@ -148,6 +150,16 @@ File > Export Favorites (or the Export button in the Favorites tab) saves your f
 ## Where data is stored
 
 Favorites are saved to `~/Library/Application Support/Crystal Set/favorites.json`. (Crystal Set was first called OTR Tuner. On first launch it copies favorites saved under that name.)
+
+## App icon
+
+The icon is a crystal set, the simple home-built radio the app is named after: a copper coil of wire on a deep blue background, a pale blue crystal standing on the coil, and radio waves spreading out to both sides of the crystal's tip. It's drawn from basic shapes by `icon/make-icon.swift`, so it's original artwork, with no clip art or Apple symbols. To change it, edit that file, then run:
+
+```bash
+bash ~/dev/crystal-set/icon/make-icon.sh
+```
+
+This writes the iPhone icon (`iOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png`) and the Mac icon (`macOS/AppIcon.icns`). Rebuild both versions afterward.
 
 ## Source layout
 
