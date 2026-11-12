@@ -242,6 +242,10 @@ New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a gui
 | `build.sh` | Builds and installs the Mac version |
 | `project.yml`, `ios.sh` | Describe, build and install the iPhone version |
 
+## Privacy
+
+Crystal Set collects nothing about you: no accounts, analytics, advertising or tracking. See the [privacy policy](PRIVACY.md) for what the app sends to Radio Browser, to radio stations and to your own iCloud.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
