@@ -107,6 +107,7 @@ struct FavoritesView: View {
                              selection: $model.favoriteSelection,
                              title: "Favorites",
                              allowsDelete: true,
+                             answersFocusRequests: true,
                              player: model.player)
             }
 
@@ -216,9 +217,15 @@ struct SearchView: View {
         .onDisappear { model.isEditingText = false }
     }
 
+    // Waits a moment before focusing. When the Search tab has only just
+    // appeared (Command-2 from Favorites), the window then picks its own
+    // first control, the "Search by" pop-up button, and a focus set any
+    // earlier was overridden. A short wait lets the field win.
     private func focusSearch() {
-        searchFieldFocused = true
         model.focusSearchField = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            searchFieldFocused = true
+        }
     }
 }
 

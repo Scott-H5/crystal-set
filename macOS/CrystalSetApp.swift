@@ -151,10 +151,18 @@ struct StationCommands: Commands {
 
             Divider()
 
-            Button("Show Favorites") { model.tab = .favorites }
-                .keyboardShortcut("1")
-            Button("Show Search") { model.tab = .search }
-                .keyboardShortcut("2")
+            // Each also moves keyboard focus (and so VoiceOver) to where
+            // you'd start: the Favorites table, or the Search field.
+            Button("Show Favorites") {
+                model.tab = .favorites
+                model.focusFavoritesTable = true
+            }
+            .keyboardShortcut("1")
+            Button("Show Search") {
+                model.tab = .search
+                model.focusSearchField = true
+            }
+            .keyboardShortcut("2")
             Button("Find Stations…") {
                 model.tab = .search
                 model.focusSearchField = true

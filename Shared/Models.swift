@@ -314,6 +314,9 @@ final class AppModel: ObservableObject {
     var resultTitle = "Import Favorites"
     // Set to true to move the cursor into the search field (Command-F).
     @Published var focusSearchField = false
+    // Set to true to move keyboard focus (and so VoiceOver) onto the
+    // Favorites table (Mac, Command-1). The table sets it back to false.
+    @Published var focusFavoritesTable = false
     /// True while a text field has focus, so arrow-key menu shortcuts
     /// (Command-Left/Right/Up/Down) go to the text field instead.
     @Published var isEditingText = false
