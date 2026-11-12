@@ -12,7 +12,7 @@ A small, VoiceOver-friendly internet radio app for the Mac and iPhone. It was bu
 - Reconnects on its own when a stream drops or goes silent: five tries over about 40 seconds. It says "Connection lost. Reconnecting" once, then "Reconnected" when sound is back
 - On iPhone, picks the station back up after a phone call, Siri or an alarm, unless you paused it yourself
 
-The Mac and iPhone versions share their stations, search, playback, sleep timer, and import and export code; only the screens differ. Favorites don't sync between them yet, but you can export them on one and import them on the other.
+The Mac and iPhone versions share their stations, search, playback, sleep timer, and import and export code; only the screens differ. Favorites sync between your Mac and iPhone through iCloud (see [Syncing favorites with iCloud](#syncing-favorites-with-icloud)).
 
 ## Accessibility
 
@@ -45,6 +45,8 @@ On iPhone, with VoiceOver:
 Both versions are described in `project.yml`. `build.sh` turns that into an Xcode project with XcodeGen and builds the Mac version with `xcodebuild`, signed with your Apple team (the team ID in `ios-team.txt`). You don't need to open Xcode, and the script works from any folder.
 
 Why it's signed with your team rather than "ad hoc": iCloud sync and TestFlight both need an app signed by an Apple Developer team. The first build may take a little longer, because Xcode creates your signing certificate.
+
+Because the Mac app uses iCloud, it needs a development profile, and a Mac development profile lists the Macs it may run on. Register your Mac once at [developer.apple.com/account/resources/devices/add](https://developer.apple.com/account/resources/devices/add): choose macOS, and enter the Provisioning UDID from System Information > Hardware. Until then the build stops with "isn't registered in your developer account".
 
 To build and install in one step:
 
@@ -172,6 +174,18 @@ Stations already in your favorites (same ID or same stream address) are skipped.
 ## Exporting favorites
 
 File > Export Favorites (or the Export button in the Favorites tab) saves your favorites as a JSON file, named "Crystal Set Favorites" by default. It uses Crystal Set's own format, which keeps every field and can be imported again, so it works as a backup or for moving favorites to another Mac.
+
+## Syncing favorites with iCloud
+
+Favorites sync between every copy of Crystal Set signed in to the same iCloud account (with iCloud Drive turned on). Adding, removing, renaming, moving or importing a favorite reaches your other devices, usually within a few seconds to a minute.
+
+Each device also keeps its own copy, so Crystal Set works offline and without iCloud. The shared copy is kept in iCloud's key-value storage, Apple's simple sync for small data, under your team ID and the bundle ID; both apps ask for it in their `CrystalSet.entitlements` file.
+
+- The first time a device meets the list in iCloud, it merges: iCloud's stations in their order, then any of the device's own stations that were missing. So turning sync on for two devices that each have favorites loses neither list.
+- After that, a change on one device replaces the list on the others, so removing a station on one removes it everywhere.
+- If both devices change the list while one is offline, the change made last wins.
+
+The code, with these rules in comments, is under "iCloud sync" in `Shared/Models.swift`.
 
 ## Where data is stored
 

@@ -143,20 +143,27 @@ actor RadioBrowserClient {
     /// Radio Browser asks clients to pick one of its mirror servers.
     ///
     /// `async` means this function can wait (here, for the network) without
-    /// freezing the app.
-    private func server() async -> URL {
+    /// freezing the app. `avoiding` leaves out a server that just failed.
+    private func server(avoiding failed: URL? = nil) async -> URL {
         // Already picked one? Keep using it.
         if let baseURL { return baseURL }
         // A known server to fall back on if the list can't be fetched.
         var chosen = URL(string: "https://de1.api.radio-browser.info")!
         // Fetch the list of servers and pick one at random. Each `let` line
         // must succeed for the block to run; if any fails, the fallback stays.
+        //
+        // Only names ending in ".api.radio-browser.info" are used. The list
+        // can also include a server's raw hosting name (it once listed
+        // "static.78.4.98.91.clients.your-server.de" beside de1). Its
+        // security certificate is for the radio-browser.info name, so iOS
+        // and macOS rightly refuse it, and the search failed with "The
+        // certificate for this server is invalid."
         if let listURL = URL(string: "https://all.api.radio-browser.info/json/servers"),
            let result = try? await session.data(from: listURL),
-           let servers = try? JSONDecoder().decode([Server].self, from: result.0),
-           let pick = Set(servers.map(\.name)).randomElement(),
-           let url = URL(string: "https://\(pick)") {
-            chosen = url
+           let servers = try? JSONDecoder().decode([Server].self, from: result.0) {
+            let names = Set(servers.map(\.name).filter { $0.hasSuffix(".api.radio-browser.info") })
+            let usable = names.compactMap { URL(string: "https://\($0)") }.filter { $0 != failed }
+            if let pick = usable.randomElement() { chosen = pick }
         }
         baseURL = chosen
         return chosen
@@ -167,7 +174,21 @@ actor RadioBrowserClient {
     /// `throws` means this can fail with an error (for example, no internet),
     /// which the caller must handle.
     func search(_ text: String, by field: SearchField) async throws -> [Station] {
-        let base = await server()
+        // If a mirror fails (down, or a certificate problem), try once more
+        // on another, so one bad server doesn't show you an error.
+        do {
+            return try await search(text, by: field, on: await server())
+        } catch let error as URLError where error.code == .cancelled {
+            throw error
+        } catch {
+            let failed = baseURL
+            baseURL = nil
+            return try await search(text, by: field, on: await server(avoiding: failed))
+        }
+    }
+
+    // One search on one mirror server.
+    private func search(_ text: String, by field: SearchField, on base: URL) async throws -> [Station] {
         // Build the web address, such as
         // https://<server>/json/stations/search?tag=otr&hidebroken=true&...
         var components = URLComponents(url: base.appendingPathComponent("json/stations/search"),
@@ -186,8 +207,7 @@ actor RadioBrowserClient {
         let (data, response) = try await session.data(from: components.url!)
         // Status codes from 200 to 299 mean success.
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            // Try a different mirror next time.
-            baseURL = nil
+            // The caller then tries a different mirror.
             throw URLError(.badServerResponse)
         }
         // Convert the JSON reply into Stations, dropping any without a stream
@@ -251,8 +271,14 @@ final class AppModel: ObservableObject {
     @Published var tab: Tab = .favorites
 
     // The favorites list. `didSet` runs every time the list changes, so it's
-    // saved to disk after every add, remove, or move.
-    @Published var favorites: [Station] = [] { didSet { saveFavorites() } }
+    // saved to disk after every add, remove, rename or move, and sent to
+    // iCloud so your other devices get it (see "iCloud sync" below).
+    @Published var favorites: [Station] = [] {
+        didSet {
+            saveFavorites()
+            sendFavoritesToICloud()
+        }
+    }
     // The selected favorite's ID, or nil when nothing is selected.
     @Published var favoriteSelection: Station.ID?
 
@@ -292,7 +318,8 @@ final class AppModel: ObservableObject {
     private let client = RadioBrowserClient()
 
     /// Where favorites are saved:
-    /// ~/Library/Application Support/Crystal Set/favorites.json
+    /// Application Support/Crystal Set/favorites.json (on the Mac, inside
+    /// the App Sandbox folder; see README "Where data is stored")
     private var favoritesFile: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = support.appendingPathComponent("Crystal Set", isDirectory: true)
@@ -318,6 +345,139 @@ final class AppModel: ObservableObject {
             favoriteSelection = saved.first?.id
         }
         setUpTrackCommands()
+        startICloudSync()
+    }
+
+    // MARK: iCloud sync
+
+    // How favorites sync between the Mac and iPhone.
+    //
+    // Each device keeps its own favorites.json, so the app works offline and
+    // without iCloud. A copy of the list is also kept in iCloud's key-value
+    // storage (NSUbiquitousKeyValueStore): a small store of named values that
+    // Apple keeps in step across every device signed in to the same iCloud
+    // account. It suits a favorites list (a few kilobytes; the limit is 1 MB)
+    // and needs no setup on Apple's side beyond the entitlement in each app's
+    // CrystalSet.entitlements.
+    //
+    // The rules:
+    //   - Any change here (add, remove, rename, move, import) goes to iCloud.
+    //   - A change arriving from another device replaces the list here, so a
+    //     removal on one device removes the station everywhere.
+    //   - The first time a device meets the list in iCloud, it *merges*
+    //     instead: iCloud's stations in their order, then any of this
+    //     device's own stations that iCloud lacked. That way, turning sync on
+    //     for two devices that each have favorites loses neither list.
+    //   - If both devices change the list while one is offline, the change
+    //     made last wins when they reconnect.
+    //
+    // Without iCloud (signed out, or iCloud Drive off) all of this quietly
+    // does nothing and the app keeps its local list.
+
+    /// The key-value store shared by every copy of Crystal Set on your devices.
+    private let cloud = NSUbiquitousKeyValueStore.default
+    /// The name the favorites list is stored under in iCloud.
+    private static let cloudFavoritesKey = "favorites"
+    /// Remembers (in this device's settings) that this device has merged its
+    /// list with iCloud's, so later changes replace rather than merge.
+    private static let mergedWithICloudKey = "favoritesMergedWithICloud"
+    // True while a list from iCloud is being applied, so applying it isn't
+    // sent straight back to iCloud.
+    private var applyingICloudChange = false
+    // Keeps the iCloud watcher alive.
+    private var iCloudObserver: NSObjectProtocol?
+
+    private var hasMergedWithICloud: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.mergedWithICloudKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.mergedWithICloudKey) }
+    }
+
+    private func startICloudSync() {
+        // Run iCloudChanged(_:) whenever another device's change arrives.
+        iCloudObserver = NotificationCenter.default.addObserver(
+            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: cloud,
+            queue: .main
+        ) { [weak self] note in
+            let reason = note.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int
+            MainActor.assumeIsolated { self?.iCloudChanged(reason) }
+        }
+        // Ask for the latest from iCloud, then deal with what's there already.
+        cloud.synchronize()
+        iCloudChanged(nil)
+    }
+
+    /// The favorites list stored in iCloud, or nil if there isn't one (yet).
+    private var iCloudFavorites: [Station]? {
+        guard let data = cloud.data(forKey: Self.cloudFavoritesKey) else { return nil }
+        return try? JSONDecoder().decode([Station].self, from: data)
+    }
+
+    private func sendFavoritesToICloud() {
+        guard !applyingICloudChange,
+              let data = try? JSONEncoder().encode(favorites) else { return }
+        cloud.set(data, forKey: Self.cloudFavoritesKey)
+    }
+
+    /// Handles the list in iCloud: at startup (reason nil) and whenever
+    /// another device changes it.
+    private func iCloudChanged(_ reason: Int?) {
+        switch reason {
+        case NSUbiquitousKeyValueStoreQuotaViolationChange:
+            // Over iCloud's 1 MB limit; can't happen with a favorites list,
+            // but if it did, keep the local list as it is.
+            return
+        case NSUbiquitousKeyValueStoreAccountChange:
+            // Signed in to a different iCloud account: treat its list as new,
+            // and merge with it rather than replacing this device's list.
+            hasMergedWithICloud = false
+        default:
+            break
+        }
+
+        guard let remote = iCloudFavorites else {
+            // Nothing in iCloud yet, or it hasn't arrived from Apple yet.
+            // Offer this device's list. This doesn't count as merging, because
+            // another device's list may still be on its way; when it arrives,
+            // the two are merged (below), so neither is lost.
+            if !favorites.isEmpty { sendFavoritesToICloud() }
+            return
+        }
+
+        if hasMergedWithICloud {
+            // Normal case: another device changed the list, so use it.
+            if remote != favorites { applyFromICloud(remote) }
+        } else {
+            // First meeting: keep both lists.
+            hasMergedWithICloud = true
+            let merged = Self.merge(remote, with: favorites)
+            if merged != favorites { applyFromICloud(merged) }
+            if merged != remote { sendFavoritesToICloud() }
+        }
+    }
+
+    /// iCloud's stations in their order, then this device's stations that
+    /// iCloud doesn't have (matched by ID or by stream address, the same test
+    /// Import uses to skip duplicates).
+    private static func merge(_ remote: [Station], with local: [Station]) -> [Station] {
+        let ids = Set(remote.map(\.id))
+        let urls = Set(remote.map(\.url))
+        return remote + local.filter { !ids.contains($0.id) && !urls.contains($0.url) }
+    }
+
+    // Puts a list from iCloud on screen and on disk, without sending it back.
+    private func applyFromICloud(_ list: [Station]) {
+        applyingICloudChange = true
+        favorites = list
+        applyingICloudChange = false
+        // Keep the selection on a station that still exists.
+        if let id = favoriteSelection, !list.contains(where: { $0.id == id }) {
+            favoriteSelection = list.first?.id
+        }
+        // If the station playing was renamed on the other device, show the new name.
+        if let playing = player.station, let updated = list.first(where: { $0.id == playing.id }) {
+            player.stationRenamed(updated)
+        }
     }
 
     // MARK: Next and Previous from outside the app

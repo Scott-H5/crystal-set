@@ -68,7 +68,9 @@ targets:
     # Code shared with the Mac version, plus the iPhone's own screens.
     sources:
       - Shared
-      - iOS
+      - path: iOS
+        # Named in CODE_SIGN_ENTITLEMENTS instead; not something to copy.
+        excludes: [CrystalSet.entitlements]
     # Creates a scheme, which xcodebuild needs in order to build the target.
     scheme: {}
     settings:
@@ -82,6 +84,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # 1 is iPhone, 2 is iPad.
         TARGETED_DEVICE_FAMILY: "1,2"
+        # iCloud key-value storage for syncing favorites with the Mac.
+        CODE_SIGN_ENTITLEMENTS: iOS/CrystalSet.entitlements
     # XcodeGen writes these settings into iOS/Info.plist.
     info:
       path: iOS/Info.plist

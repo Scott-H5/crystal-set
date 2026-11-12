@@ -37,13 +37,16 @@ fi
 xcodegen generate --quiet
 
 # Build and sign with your team. -quiet prints only warnings and errors.
+# The destination is "this Mac" (not "any Mac") so that Xcode registers this
+# Mac with your team the first time: iCloud needs a development profile, and
+# a Mac development profile lists the Macs it may run on.
 # -allowProvisioningUpdates lets Xcode create the certificate and signing
 # profile it needs, the first time and whenever they expire.
 xcodebuild -quiet \
   -project CrystalSet.xcodeproj \
   -scheme CrystalSet-macOS \
   -configuration Release \
-  -destination "generic/platform=macOS" \
+  -destination "platform=macOS" \
   -derivedDataPath build/mac \
   -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$TEAM" \

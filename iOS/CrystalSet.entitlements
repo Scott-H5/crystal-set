@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements: the permissions the iPhone app asks iOS for. project.yml
+  names this file (CODE_SIGN_ENTITLEMENTS); it's built into the signature.
+-->
+<plist version="1.0">
+<dict>
+	<!-- iCloud key-value storage, which syncs the favorites list (see
+	     "iCloud sync" in Shared/Models.swift). The store's name is your team
+	     ID plus the bundle ID; the Mac app asks for the same name, so both
+	     share one list. -->
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+</dict>
+</plist>
