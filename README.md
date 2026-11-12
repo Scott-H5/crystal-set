@@ -50,7 +50,7 @@ On iPhone, with VoiceOver:
 - `mac` runs on this Mac. The first time, macOS asks to let the test runner control the computer (System Settings > Privacy & Security > Accessibility). Turn that off again afterwards.
 - A screenshot of each screen audited is saved in `build/audit-screenshots-ios` (or `-mac`), so each finding can be checked against what was actually on screen.
 
-Known results that aren't problems: the Now Playing bar on iPhone stops growing at the largest standard text size on purpose (touch and hold it for the Large Content Viewer); rows scrolled underneath a bar are measured against the bar; and on the Mac, a few contrast and "missing action" results land on Apple's own pop-up menus and slider, whose text is plainly dark in the screenshots.
+Known results that aren't problems: the Now Playing bar on iPhone stops growing at the largest standard text size on purpose (touch and hold it for the Large Content Viewer); rows scrolled underneath a bar are measured against the bar; and on the Mac, a few contrast and "missing action" results land on Apple's own pop-up menus and slider, whose text is plainly dark in the screenshots. The Mac tables' names also show as "unknown role": telling VoiceOver they're plain text silences that, but it stops VO-Space from playing a station, so it's left as it is.
 
 ## Requirements
 
@@ -189,7 +189,7 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | --- | --- |
 | Add or remove selected station from favorites | Command-D |
 | Move favorite up / down | Command-Option-Up Arrow / Down Arrow |
-| Show Favorites / Search | Command-1 / Command-2 |
+| Show Favorites (focus goes to the table) / Search (focus goes to the search field) | Command-1 / Command-2 |
 | Find stations (focus search field) | Command-F |
 | Add station by address (shows Search, ready to paste) | Command-N |
 | Import favorites | Command-Shift-I |

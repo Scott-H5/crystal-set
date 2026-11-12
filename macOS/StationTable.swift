@@ -42,6 +42,9 @@ struct StationTable: NSViewRepresentable {
     let title: String
     /// Command-Delete removes the selected station (Favorites only).
     var allowsDelete = false
+    /// Takes keyboard focus when the AppModel's focusFavoritesTable is set
+    /// (Command-1). Favorites only.
+    var answersFocusRequests = false
     /// Stars stations that are already favorites. On for Search results only,
     /// since every row in Favorites would have one.
     var showsFavoriteStars = false
@@ -118,6 +121,20 @@ struct StationTable: NSViewRepresentable {
         coordinator.syncSelection()
         // Move the speaker icon and stars if playback or favorites changed.
         coordinator.refreshNameCells()
+
+        // Command-1 asked for focus on this table. Wait a moment first: when
+        // the tab has only just switched, the table isn't in the window yet.
+        // (The model is changed only after this function returns, because
+        // SwiftUI doesn't allow changes while it's updating the screen.)
+        if answersFocusRequests && model.focusFavoritesTable {
+            let model = self.model
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                if let table = coordinator.table, let window = table.window {
+                    window.makeFirstResponder(table)
+                }
+                model.focusFavoritesTable = false
+            }
+        }
     }
 
     // MARK: Columns
@@ -325,7 +342,8 @@ struct StationTable: NSViewRepresentable {
             if let reused = tableView.makeView(withIdentifier: tableColumn.identifier, owner: nil) as? NSTableCellView {
                 cell = reused
             } else {
-                cell = NSTableCellView()
+                // PressableCellView passes VO-Space on to the row (see below).
+                cell = PressableCellView()
                 cell.identifier = tableColumn.identifier
                 // A plain text label. Text too long for the column ends in "…".
                 // SpokenTextField lets an empty cell say "None" to VoiceOver.
@@ -661,6 +679,12 @@ final class StationNameCellView: NSTableCellView {
     // Required by AppKit for views loaded from interface files, which this app doesn't use.
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    // VO-Space can land on the cell itself (it did in Favorites); pass it to
+    // the text, which passes it to the row. See SpokenTextField.
+    override func accessibilityPerformPress() -> Bool {
+        (textField as? SpokenTextField)?.accessibilityPerformPress() ?? false
+    }
+
     // What VoiceOver finds inside this cell: only the name. Without this,
     // VoiceOver still found the speaker icon and read Apple's built-in name
     // for it, "volume high, image", whatever the volume. The name already
@@ -722,11 +746,33 @@ final class SpokenTextField: NSTextField {
         spokenText ?? super.accessibilityValue()
     }
 
-    // Says what kind of element this is: plain text. Without it, Apple's
-    // accessibility audit reported "unknown role" for every name in the
-    // table, because a label with its own accessibility answers left the
-    // role unset.
-    override func accessibilityRole() -> NSAccessibility.Role? {
-        .staticText
+    // VO-Space on a table row. On macOS 27, VoiceOver sends VO-Space to the
+    // text in the cell, not to the row or the table: a log showed no select
+    // or press reaching either. So the text passes the press on to its row,
+    // which plays the station. (Found 2026-11-12.)
+    override func accessibilityPerformPress() -> Bool {
+        var view = superview
+        while let current = view, !(current is StationRowView) { view = current.superview }
+        if let rowView = view as? StationRowView { return rowView.accessibilityPerformPress() }
+        return super.accessibilityPerformPress()
+    }
+
+    // Deliberately NOT overriding accessibilityRole() here.
+    //
+    // Apple's accessibility audit reports these labels as "unknown role", and
+    // answering `.staticText` silenced it. But it also broke VO-Space on the
+    // table: VoiceOver has nothing to "press" on plain static text, so the
+    // keypress stopped reaching the row and never played the station. (Added
+    // and removed 2026-11-12; VO-Space working matters far more than a clean
+    // audit, so the "unknown role" result is listed as a known one in README.)
+}
+
+/// A plain table cell (Country, Format, Tags) that passes VO-Space on to its
+/// row, the same as the Name column's cell does. On macOS 27 VoiceOver sends
+/// VO-Space to the cell or its text rather than to the row, so without this
+/// VO-Space did nothing in the table. (Found with logging, 2026-11-12.)
+final class PressableCellView: NSTableCellView {
+    override func accessibilityPerformPress() -> Bool {
+        (textField as? SpokenTextField)?.accessibilityPerformPress() ?? false
     }
 }
