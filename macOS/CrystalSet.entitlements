@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements: the permissions the Mac app asks macOS for. project.yml
+  names this file (CODE_SIGN_ENTITLEMENTS), and it's built into the app's
+  signature, so the app can't quietly give itself more.
+
+  The App Sandbox is required for Mac apps on TestFlight and the App Store.
+  A sandboxed app starts with almost no access: it gets its own private
+  folder (~/Library/Containers/io.github.scott-h5.crystalset) and nothing
+  else, until an entitlement below allows more. Crystal Set needs only two
+  things beyond that.
+-->
+<plist version="1.0">
+<dict>
+	<!-- Turn the sandbox on. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Connect out to the internet: radio streams and the Radio Browser
+	     station search. (Not "server": nothing connects in to the app.) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Read and write files you choose in an Open or Save panel: Import
+	     Favorites and Export Favorites. No other files are reachable. -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+</dict>
+</plist>

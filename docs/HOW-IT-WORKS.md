@@ -122,7 +122,7 @@ Both functions can fire for the same VO-Space press (and the second one sees the
 
 ## 5. How favorites are saved
 
-- **Where:** `~/Library/Application Support/Crystal Set/favorites.json`.
+- **Where:** on the Mac, `favorites.json` in the app's Application Support folder. Because the Mac app runs in the App Sandbox, that folder is inside `~/Library/Containers/io.github.scott-h5.crystalset/`; the code just asks for "Application Support" and macOS points it there. On the iPhone, it's in the app's own storage.
 - **When:** every time the list changes. In `Models.swift`, the `favorites` property has a `didSet` that calls `saveFavorites()`. `didSet` runs whenever the value changes, so every add, remove, move or import saves straight away.
 - **Loading:** when the app starts, `AppModel`'s `init()` reads the file back.
 - **Format:** a JSON list of stations. Because `Station` is marked `Codable`, Swift converts between a Station and its JSON automatically.

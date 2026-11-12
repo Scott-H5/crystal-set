@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Moves favorites saved before the App Sandbox into the sandbox's folder.
+
+  Before the sandbox, favorites were in
+      ~/Library/Application Support/Crystal Set/favorites.json
+  A sandboxed app can't see that folder. Its own Application Support folder is
+      ~/Library/Containers/io.github.scott-h5.crystalset/Data/Library/Application Support/
+
+  macOS reads this file (it must be named container-migration.plist, in the
+  app's Resources folder) the first time the sandboxed version opens. It
+  moves each item listed under Move into the same place inside the sandbox,
+  before any of the app's own code runs. So AppModel's code finds the
+  favorites where it always looks, and nothing in Swift had to change.
+
+  It runs only once, when the sandbox folder is first created; after that
+  macOS ignores this file.
+-->
+<plist version="1.0">
+<dict>
+	<key>Move</key>
+	<array>
+		<string>${ApplicationSupport}/Crystal Set</string>
+	</array>
+</dict>
+</plist>

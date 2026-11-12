@@ -2,14 +2,17 @@
 # Uploads a new build of Crystal Set to App Store Connect, for TestFlight.
 #
 #   ./testflight.sh ios      the iPhone (and iPad) version
+#   ./testflight.sh mac      the Mac version
 #
-# (The Mac version will be added once it runs in the App Sandbox, which Apple
-# requires for Mac apps on TestFlight and the App Store.)
+# Both are the same App Store Connect app (the same bundle ID), so their
+# builds appear side by side in its TestFlight tab.
 #
 # What it does, in two steps:
 #   1. "Archive": a Release build signed for distribution, saved in
 #      build/archives. The first time, Xcode creates your Apple Distribution
-#      certificate and an App Store provisioning profile.
+#      certificate and an App Store provisioning profile (and, for the Mac,
+#      a Mac Installer Distribution certificate, since Mac apps are uploaded
+#      as an installer package).
 #   2. "Export" with the upload option: xcodebuild sends the archive to App
 #      Store Connect, signed in as the Apple ID in Xcode > Settings >
 #      Accounts. No App Store Connect API key is needed.
@@ -27,7 +30,8 @@ cd "$(dirname "$0")"
 
 case "${1:-}" in
   ios) SCHEME="CrystalSet-iOS"; DESTINATION="generic/platform=iOS" ;;
-  *) echo "Usage: ./testflight.sh ios" >&2; exit 2 ;;
+  mac) SCHEME="CrystalSet-macOS"; DESTINATION="generic/platform=macOS" ;;
+  *) echo "Usage: ./testflight.sh ios   or   ./testflight.sh mac" >&2; exit 2 ;;
 esac
 
 # The Apple team, as in build.sh and ios.sh.
@@ -94,7 +98,7 @@ xcodebuild -quiet \
   -exportOptionsPlist "$OPTIONS" \
   -exportPath "build/archives/export-$BUILD_NUMBER" \
   -allowProvisioningUpdates 2>&1 \
-  | { grep -vE 'Progress [0-9]+%|IDESchemeActionsInvocationRecord' || true; }
+  | { grep -vE 'Progress [0-9]+%|IDESchemeActionsInvocationRecord|IDEDistributionLogging' || true; }
 
 echo "Uploaded build $BUILD_NUMBER. Apple emails you when it has been processed;"
 echo "it then appears in App Store Connect under your app's TestFlight tab."

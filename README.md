@@ -94,13 +94,14 @@ With a paid Apple Developer Program membership and an app record in [App Store C
 
 ```bash
 ~/dev/crystal-set/testflight.sh ios
+~/dev/crystal-set/testflight.sh mac
 ```
 
 This makes a Release "archive" signed for distribution, then uploads it to App Store Connect, signed in as the Apple ID in Xcode > Settings > Accounts. No App Store Connect API key is needed. The first run creates your Apple Distribution certificate. Each upload gets the date and time as its build number, such as 202611121430, because App Store Connect refuses a build number it has already seen.
 
 Apple then processes the build, usually in 5 to 30 minutes, and emails you. In App Store Connect, open the app's TestFlight tab and add yourself under Internal Testing; then install it with Apple's TestFlight app. Internal testers don't need App Review. TestFlight builds expire after 90 days, so upload a new one before then.
 
-The Mac version isn't on TestFlight yet: Apple requires Mac apps there to run in the App Sandbox, which comes next.
+Both versions are the same app in App Store Connect, so the iPhone and Mac builds appear side by side in its TestFlight tab. Install the Mac build with the TestFlight app for the Mac.
 
 ## Keyboard shortcuts
 
@@ -174,7 +175,11 @@ File > Export Favorites (or the Export button in the Favorites tab) saves your f
 
 ## Where data is stored
 
-Favorites are saved to `~/Library/Application Support/Crystal Set/favorites.json`. (Crystal Set was first called OTR Tuner. On first launch it copies favorites saved under that name.)
+On the Mac, favorites are saved to `~/Library/Containers/io.github.scott-h5.crystalset/Data/Library/Application Support/Crystal Set/favorites.json`. On the iPhone, they're saved in the app's own storage.
+
+The Mac version runs in the App Sandbox, which Apple requires for TestFlight and the App Store. A sandboxed app can only use its own folder (the `Containers` path above), the internet, and files you pick in an Open or Save panel; `macOS/CrystalSet.entitlements` lists those permissions. Before the sandbox, the Mac kept favorites in `~/Library/Application Support/Crystal Set/`. The first time the sandboxed version opens, macOS moves that folder into the sandbox (see `macOS/container-migration.plist`). macOS also stops other apps, including Terminal, from opening the sandbox folder, so use File > Export Favorites to get a copy.
+
+(Crystal Set was first called OTR Tuner. On first launch it copies favorites saved under that name.)
 
 ## App icon
 

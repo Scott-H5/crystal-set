@@ -35,9 +35,11 @@ targets:
       - Shared
       - path: macOS
         # Info.plist is the app's settings file, not a source file; it's
-        # named in INFOPLIST_FILE below instead. (AppIcon.icns is copied
-        # into the app's Resources folder, as before.)
-        excludes: [Info.plist]
+        # named in INFOPLIST_FILE below instead. The entitlements file is
+        # named in CODE_SIGN_ENTITLEMENTS. (AppIcon.icns and
+        # container-migration.plist are copied into the app's Resources
+        # folder.)
+        excludes: [Info.plist, CrystalSet.entitlements]
     scheme: {}
     settings:
       base:
@@ -55,6 +57,10 @@ targets:
         # for apps distributed outside the App Store, and recommends for all.
         # Crystal Set needs none of the exceptions it can switch off.
         ENABLE_HARDENED_RUNTIME: YES
+        # The App Sandbox and the two permissions Crystal Set needs (see
+        # the comments in that file). container-migration.plist moves
+        # favorites saved before the sandbox into its folder.
+        CODE_SIGN_ENTITLEMENTS: macOS/CrystalSet.entitlements
 
   CrystalSet-iOS:
     type: application
