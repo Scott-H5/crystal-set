@@ -328,7 +328,8 @@ struct StationTable: NSViewRepresentable {
                 cell = NSTableCellView()
                 cell.identifier = tableColumn.identifier
                 // A plain text label. Text too long for the column ends in "…".
-                let field = NSTextField(labelWithString: "")
+                // SpokenTextField lets an empty cell say "None" to VoiceOver.
+                let field = SpokenTextField(labelWithString: "")
                 field.lineBreakMode = .byTruncatingTail
                 field.translatesAutoresizingMaskIntoConstraints = false
                 cell.addSubview(field)
@@ -343,6 +344,10 @@ struct StationTable: NSViewRepresentable {
             }
             let text = column.text(for: station)
             cell.textField?.stringValue = text
+            // An empty cell (a station with no tags, say) reads "None" to
+            // VoiceOver instead of nothing. Apple's audit flagged the empty
+            // cells as having no description.
+            (cell.textField as? SpokenTextField)?.spokenText = text.isEmpty ? "None" : nil
             // Hovering the pointer shows the full text.
             cell.textField?.toolTip = text.isEmpty ? nil : text
             return cell
@@ -715,5 +720,13 @@ final class SpokenTextField: NSTextField {
 
     override func accessibilityValue() -> String? {
         spokenText ?? super.accessibilityValue()
+    }
+
+    // Says what kind of element this is: plain text. Without it, Apple's
+    // accessibility audit reported "unknown role" for every name in the
+    // table, because a label with its own accessibility answers left the
+    // role unset.
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        .staticText
     }
 }

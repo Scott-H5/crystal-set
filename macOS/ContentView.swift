@@ -180,7 +180,7 @@ struct SearchView: View {
             Text(model.searchMessage.isEmpty
                  ? "To add a station by its address, paste it here and press Return."
                  : model.searchMessage)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.detailText)
 
             StationTable(stations: model.results,
                          selection: $model.searchSelection,
@@ -198,7 +198,7 @@ struct SearchView: View {
                 // Credit to the free directory the stations come from.
                 Text("Station directory from radio-browser.info")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.detailText)
             }
         }
         .padding()
@@ -245,7 +245,7 @@ struct NowPlayingBar: View {
                     .font(.headline)
                 if player.station != nil {
                     Text(statusLine)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.detailText)
                         .lineLimit(2)
                 }
             }
@@ -300,7 +300,7 @@ struct NowPlayingBar: View {
             // (.accessibilityHidden) and reads just the slider.
             HStack(spacing: 6) {
                 Image(systemName: "speaker.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.detailText)
                     .accessibilityHidden(true)
                 Slider(value: $player.volume, in: 0...1, step: 0.05) {
                     Text("Volume")
@@ -308,13 +308,16 @@ struct NowPlayingBar: View {
                 // The slider's "Volume" title is for VoiceOver; the icons show what it is.
                 .labelsHidden()
                 .frame(width: 150)
+                // Named outright, as well as by its hidden title: Apple's
+                // audit found the slider with no name otherwise.
+                .accessibilityLabel("Volume")
                 // VoiceOver reads the value as a percentage, such as "80 percent".
                 .accessibilityValue("\(Int((player.volume * 100).rounded())) percent")
                 // The hover tip is on the slider itself, not the whole group:
                 // a tip on the group made it something VoiceOver could stop on.
                 .help("Volume (Command-Up Arrow and Command-Down Arrow)")
                 Image(systemName: "speaker.wave.3.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.detailText)
                     .accessibilityHidden(true)
             }
         }
@@ -367,4 +370,25 @@ struct RenameStationSheet: View {
         // Start with the current name in the field, ready to edit.
         .onAppear { name = station.name }
     }
+}
+
+// MARK: - Colors
+
+extension Color {
+    /// Gray text for second lines (status, notes, the directory credit) that
+    /// is still easy to read.
+    ///
+    /// Why not Apple's standard `.secondary` gray: Apple's accessibility audit
+    /// found it under the 4.5:1 contrast that accessibility guidelines ask
+    /// for. These grays measure about 8.5:1 in Light Mode and over 10:1 in
+    /// Dark Mode, but still look lighter than the main text. (The iPhone
+    /// version has the same color, in PhoneViews.swift.)
+    ///
+    /// An NSColor made with a "provider" picks its value each time it's drawn,
+    /// so it follows Light and Dark Mode as they change.
+    static let detailText = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.78, alpha: 1)
+            : NSColor(white: 0.30, alpha: 1)
+    })
 }

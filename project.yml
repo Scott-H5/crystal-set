@@ -40,7 +40,9 @@ targets:
         # container-migration.plist are copied into the app's Resources
         # folder.)
         excludes: [Info.plist, CrystalSet.entitlements]
-    scheme: {}
+    # The UI tests (accessibility audit, run by audit.sh) belong to it.
+    scheme:
+      testTargets: [CrystalSet-macOSUITests]
     settings:
       base:
         # The app is built as CrystalSet.app; build.sh installs it as
@@ -72,7 +74,9 @@ targets:
         # Named in CODE_SIGN_ENTITLEMENTS instead; not something to copy.
         excludes: [CrystalSet.entitlements]
     # Creates a scheme, which xcodebuild needs in order to build the target.
-    scheme: {}
+    # The UI tests (accessibility audits, run by audit.sh) belong to it.
+    scheme:
+      testTargets: [CrystalSet-iOSUITests]
     settings:
       base:
         PRODUCT_NAME: CrystalSet
@@ -116,3 +120,31 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+
+  # Automatic accessibility audits of the iPhone screens (see audit.sh).
+  # Not part of the app: a separate test bundle that drives it.
+  CrystalSet-iOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests/iOS]
+    dependencies:
+      - target: CrystalSet-iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.scott-h5.crystalset.uitests
+        GENERATE_INFOPLIST_FILE: YES
+
+  # Automatic accessibility audit of the Mac window (see audit.sh).
+  CrystalSet-macOSUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITests/macOS]
+    dependencies:
+      - target: CrystalSet-macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.scott-h5.crystalset.macuitests
+        GENERATE_INFOPLIST_FILE: YES
+        # Apple's audit needs macOS 14. Only the tests need it; the app
+        # itself still runs on macOS 13.
+        MACOSX_DEPLOYMENT_TARGET: "14.0"

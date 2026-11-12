@@ -34,6 +34,24 @@ On iPhone, with VoiceOver:
 - The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
 - The Favorites tab's More menu starts with a Sleep Timer submenu, so you can set the timer without leaving your favorites, followed by Import and Export.
 
+### Checking accessibility automatically
+
+`audit.sh` runs Apple's automatic accessibility audit (the same checks as Xcode's Accessibility Inspector) on every screen, and prints one `AUDIT:` line per problem: elements VoiceOver can't name, low contrast, text that's cut off or doesn't grow with Larger Text, and so on.
+
+```bash
+~/dev/crystal-set/audit.sh ios
+```
+
+```bash
+~/dev/crystal-set/audit.sh mac
+```
+
+- `ios` runs on a connected, unlocked iPhone, at the normal text size and the largest Accessibility size. The test opens Crystal Set and moves through its tabs by itself. It works with VoiceOver on: it touches, then double-taps, as a VoiceOver user would.
+- `mac` runs on this Mac. The first time, macOS asks to let the test runner control the computer (System Settings > Privacy & Security > Accessibility). Turn that off again afterwards.
+- A screenshot of each screen audited is saved in `build/audit-screenshots-ios` (or `-mac`), so each finding can be checked against what was actually on screen.
+
+Known results that aren't problems: the Now Playing bar on iPhone stops growing at the largest standard text size on purpose (touch and hold it for the Large Content Viewer); rows scrolled underneath a bar are measured against the bar; and on the Mac, a few contrast and "missing action" results land on Apple's own pop-up menus and slider, whose text is plainly dark in the screenshots.
+
 ## Requirements
 
 - **Both versions:** Xcode, signed in to your Apple ID (Xcode > Settings > Accounts); [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`); and your Apple team ID in `ios-team.txt` (see step 1 under Build the iPhone version).

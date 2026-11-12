@@ -52,6 +52,10 @@ struct RootView: View {
                 .tabItem { Label("Now Playing", systemImage: "radio") }
                 .tag(PhoneTab.nowPlaying)
         }
+        // The app's blue (buttons such as Search, Pause and Stop), a little
+        // darker than standard blue so it passes the accessibility contrast
+        // guideline; see Color.accessibleTint below.
+        .tint(Color.accessibleTint)
         // Magic Tap: pause or resume from anywhere in the app.
         .accessibilityAction(.magicTap) { model.player.togglePause() }
         // Keep the AppModel's tab in step, so Next and Previous Station use
@@ -235,8 +239,10 @@ struct SearchScreen: View {
                     // Status such as "114 stations found."
                     if !model.searchMessage.isEmpty {
                         Text(model.searchMessage)
+                            .foregroundStyle(Color.detailText)
                     } else {
                         Text("To add a station by its address, paste it here and tap Search.")
+                            .foregroundStyle(Color.detailText)
                     }
                 }
 
@@ -251,7 +257,7 @@ struct SearchScreen: View {
                 Section {
                     Text("Station directory from radio-browser.info")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.detailText)
                 }
             }
             .navigationTitle("Search")
@@ -303,7 +309,7 @@ struct StationRow: View {
                     if !details.isEmpty {
                         Text(details)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.detailText)
                     }
                 }
                 Spacer()
@@ -314,6 +320,13 @@ struct StationRow: View {
                 }
             }
         }
+        // Show the station name in the normal text color (black, or white in
+        // Dark Mode). Inside a list, iOS colors a button's text with the app's
+        // tint, standard blue, which measures about 4:1 against white: under
+        // the 4.5:1 that accessibility guidelines ask for. Apple's audit
+        // flagged every name. The row is still a button to VoiceOver, Voice
+        // Control and Switch Control.
+        .tint(.primary)
         // VoiceOver reads this after the name, e.g. "Gunsmoke, Playing".
         .accessibilityValue(isCurrent ? player.state.description : "")
         .accessibilityHint(tapRenames ? "Renames this station" : "Plays this station")
@@ -436,9 +449,10 @@ struct MiniPlayer: View {
                         Text(station.name)
                             .font(.headline)
                             .foregroundStyle(.primary)
+                            .lineLimit(2)
                         Text(statusLine)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.detailText)
                             .lineLimit(2)
                     }
                     Spacer()
@@ -452,8 +466,24 @@ struct MiniPlayer: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // A translucent background that keeps the list readable behind it.
-            .background(.regularMaterial)
+            // A solid background, so the bar's text always sits on the same
+            // color. (It used to be translucent "material", which let the list
+            // scrolling behind it show through. Apple's accessibility audit
+            // found the station name too faint against that at the largest
+            // text sizes.) The thin line on top separates it from the list.
+            .background(Color(uiColor: .secondarySystemBackground))
+            .overlay(alignment: .top) { Divider() }
+            // At the largest text sizes the bar used to grow until it covered
+            // most of the list. Like the tab bar, it now stops growing at the
+            // largest standard size, and touching and holding it shows its
+            // text enlarged in the middle of the screen instead (the Large
+            // Content Viewer, which works at the Accessibility text sizes).
+            // VoiceOver reads the full text either way, and the Now Playing
+            // tab shows everything at full size.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .accessibilityShowsLargeContentViewer {
+                Text("\(station.name)\n\(statusLine)")
+            }
             .accessibilityLabel("Now playing: \(station.name). \(statusLine)")
             .accessibilityHint(isPlaying ? "Pauses" : "Resumes")
             .accessibilityActions {
@@ -486,7 +516,7 @@ struct NowPlayingScreen: View {
                             Text(station.name)
                                 .font(.title2)
                             Text(player.state.description)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.detailText)
                             if !player.streamTitle.isEmpty {
                                 Text(player.streamTitle)
                             }
@@ -512,6 +542,7 @@ struct NowPlayingScreen: View {
                     Button("Previous Station") { model.playAdjacent(-1) }
                 } footer: {
                     Text("Steps through Favorites or Search results, whichever you used last.")
+                        .foregroundStyle(Color.detailText)
                 }
 
                 Section {
@@ -521,6 +552,7 @@ struct NowPlayingScreen: View {
                     }
                 } footer: {
                     Text("The sound fades out over the last 30 seconds, then playback stops.")
+                        .foregroundStyle(Color.detailText)
                 }
             }
             .navigationTitle("Now Playing")
@@ -548,4 +580,38 @@ struct SleepTimerPicker: View {
         }
         .pickerStyle(.menu)
     }
+}
+
+// MARK: - Colors
+
+extension Color {
+    /// Gray text for second lines (country and format, status, notes) that
+    /// is still easy to read.
+    ///
+    /// Why not Apple's standard `.secondary` gray: on a white background it
+    /// measures about 4:1 against the page. That's below the 4.5:1 that
+    /// accessibility guidelines (WCAG AA) ask for, and Apple's own
+    /// accessibility audit flagged every second line in the app. These grays
+    /// measure about 8.5:1 in Light Mode and over 10:1 in Dark Mode, but
+    /// still look lighter than the main text, so the two lines stay distinct.
+    ///
+    /// A UIColor with a "provider" picks its value each time it's drawn, so it
+    /// follows Light and Dark Mode as they change.
+    /// The app's tint (button text such as Search, Pause and Stop).
+    ///
+    /// Standard iOS blue measures about 4:1 against white, a little under the
+    /// 4.5:1 guideline; Apple's audit flagged every blue button. This darker
+    /// blue measures about 5.7:1 in Light Mode. Dark Mode keeps the standard
+    /// dark-mode blue, which already passes (about 5.4:1 on black).
+    static let accessibleTint = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 1)
+            : UIColor(red: 0.0, green: 0.38, blue: 0.80, alpha: 1)
+    })
+
+    static let detailText = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(white: 0.78, alpha: 1)
+            : UIColor(white: 0.30, alpha: 1)
+    })
 }
