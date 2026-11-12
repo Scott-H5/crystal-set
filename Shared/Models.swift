@@ -58,7 +58,14 @@ struct Station: Codable, Identifiable, Hashable {
     ///
     /// This is a "computed property": it has no stored value of its own and is
     /// worked out from `id` each time it's read.
-    var isFromRadioBrowser: Bool { !(id.hasPrefix("manual-") || id.hasPrefix("import-")) }
+    ///
+    /// Radio Browser IDs are UUIDs (such as 9617a958-0601-11e8-ae97-52543be04c81),
+    /// so an ID must also look like one. That matters because the ID is sent
+    /// to Radio Browser when the station plays (countClick), and an imported
+    /// file could hold any text as an ID.
+    var isFromRadioBrowser: Bool {
+        !(id.hasPrefix("manual-") || id.hasPrefix("import-")) && UUID(uuidString: id) != nil
+    }
 
     /// Text for the Format column, such as "MP3, 128 kbps".
     var formatDescription: String {

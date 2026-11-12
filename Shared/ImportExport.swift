@@ -83,7 +83,8 @@ enum FavoritesImporter {
     private static func station(from item: GenericStation) -> Station? {
         let url = (item.url ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty else { return nil }
-        let name = (item.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // TextLimit (Player.swift) keeps a name from a file to a sensible length.
+        let name = TextLimit.trimmed(item.name ?? "")
 
         // Pull bitrate, codec and country out of a description such as
         // "48k • MP3 • London, England • The United Kingdom".

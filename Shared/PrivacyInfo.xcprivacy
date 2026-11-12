@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The privacy manifest, which Apple requires in apps on TestFlight and the
+  App Store. It's in Shared/ so both the Mac and iPhone apps include it.
+
+  It says three things:
+    - Crystal Set doesn't track you (no advertising IDs, no data brokers).
+    - It collects no data about you. (Search text and play counts go to
+      Radio Browser and favorites to your own iCloud, but none of it is
+      linked to you or collected by the app's developer; see PRIVACY.md.)
+    - Why it uses the one "required reason" API it uses: UserDefaults
+      (each device's own settings), to remember whether this device has
+      merged its favorites with iCloud yet. CA92.1 is Apple's code for
+      "the app's own data, read and written only by this app."
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

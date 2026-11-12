@@ -745,7 +745,9 @@ private final class MetadataDelegate: NSObject, AVPlayerItemMetadataOutputPushDe
         let onTitle = self.onTitle
         Task { @MainActor in
             guard let value = try? await item.load(.stringValue) else { return }
-            let title = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The title comes from the radio station's server; keep it to a
+            // sensible length for the screen and for VoiceOver.
+            let title = TextLimit.trimmed(value)
             if !title.isEmpty { onTitle(title) }
         }
     }
@@ -772,17 +774,44 @@ enum StreamResolver {
         let ext = url.pathExtension.lowercased()
         guard ["pls", "m3u", "asx"].contains(ext) else { return url }
 
-        // Download the playlist (giving up after 15 seconds, or if it's
-        // suspiciously large) and read it as text.
+        // Download the playlist and read it as text.
+        //
+        // It's read a piece at a time and abandoned after 200 KB or 15
+        // seconds, whichever comes first. Why not just download it: some
+        // servers answer a ".m3u" or ".pls" address with the audio stream
+        // itself, which never ends. A plain download would keep filling
+        // memory for as long as the stream runs. (A real playlist is a few
+        // hundred bytes.)
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("CrystalSet/1.0", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              data.count < 200_000,
+        guard let data = await download(request, limit: Self.playlistSizeLimit),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
         else { return url }
 
         // If no stream is found inside, try the original address anyway.
         return firstStream(in: text) ?? url
+    }
+
+    /// The most a playlist file may be. Real ones are a few hundred bytes.
+    static let playlistSizeLimit = 200_000
+
+    /// Downloads at most `limit` bytes, giving up after 15 seconds in all.
+    /// Returns nil if it's bigger than that (so not a playlist), or fails.
+    private static func download(_ request: URLRequest, limit: Int) async -> Data? {
+        let started = Date()
+        guard let (bytes, _) = try? await URLSession.shared.bytes(for: request) else { return nil }
+        // Stop the download however this function ends.
+        defer { bytes.task.cancel() }
+        var data = Data()
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > limit || Date().timeIntervalSince(started) > 15 { return nil }
+            }
+        } catch {
+            return nil
+        }
+        return data
     }
 
     /// Asks a stream for its station name, or returns nil if it doesn't say.
@@ -804,7 +833,9 @@ enum StreamResolver {
               // Some servers send a placeholder instead of a real name.
               !name.isEmpty, name.lowercased() != "unspecified name", name.lowercased() != "no name"
         else { return nil }
-        return name
+        // The name comes from whatever server you pasted; keep it to a
+        // sensible length for the list and for VoiceOver (see TextLimit).
+        return TextLimit.trimmed(name)
     }
 
     /// Finds the first web address in a playlist's text, reading it line by line.
@@ -823,10 +854,32 @@ enum StreamResolver {
                 }
             }
             // .m3u lines are plain addresses, so they need no special handling.
-            if line.lowercased().hasPrefix("http"), let url = URL(string: line) {
+            // Only http and https addresses count (not, say, "httpx:" or a
+            // file on the device).
+            if let url = URL(string: line), let scheme = url.scheme?.lowercased(),
+               scheme == "http" || scheme == "https" {
                 return url
             }
         }
         return nil
+    }
+}
+
+// MARK: - Text from outside the app
+
+/// Keeps text from outside the app (stream titles, station names from a
+/// server or an imported file) to a sensible length.
+///
+/// Why: that text comes from servers and files anyone could write. A title
+/// thousands of characters long wouldn't harm anything, but VoiceOver would
+/// read all of it and it would swamp the screen. 200 characters is far
+/// longer than any real show or station name.
+enum TextLimit {
+    static let maxLength = 200
+
+    static func trimmed(_ text: String) -> String {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count > maxLength else { return clean }
+        return String(clean.prefix(maxLength)) + "…"
     }
 }
