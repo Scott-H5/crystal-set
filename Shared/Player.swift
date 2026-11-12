@@ -284,7 +284,13 @@ final class Player: ObservableObject {
             text = "Nothing playing"
         }
         if let sleepTimerDescription { text += ". \(sleepTimerDescription)" }
-        announce(text)
+        // Wait a moment before speaking. On the Mac, when a menu shortcut
+        // (Command-I) is pressed, VoiceOver says the menu item's name, "What's
+        // Playing". Spoken right away, this announcement was cut off by it, so
+        // nothing else was heard. Six-tenths of a second lets the name finish.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            announce(text)
+        }
     }
 
     // MARK: Sleep timer

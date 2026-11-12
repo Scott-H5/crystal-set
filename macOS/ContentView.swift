@@ -106,7 +106,8 @@ struct FavoritesView: View {
                 StationTable(stations: model.favorites,
                              selection: $model.favoriteSelection,
                              title: "Favorites",
-                             allowsDelete: true)
+                             allowsDelete: true,
+                             player: model.player)
             }
 
             // An HStack lines things up left to right: the row of buttons.
@@ -183,7 +184,9 @@ struct SearchView: View {
 
             StationTable(stations: model.results,
                          selection: $model.searchSelection,
-                         title: "Search results")
+                         title: "Search results",
+                         showsFavoriteStars: true,
+                         player: model.player)
 
             HStack {
                 Button("Play") { if let selected { model.play(selected) } }
@@ -253,14 +256,31 @@ struct NowPlayingBar: View {
 
             Spacer()
 
-            // The button's title switches between "Pause" and "Resume".
-            Button(player.state == .playing || player.state == .connecting ? "Pause" : "Resume") {
+            // Pause/Resume and Stop show the usual playback icons. A Label has
+            // both a title and an icon; `.iconOnly` shows just the icon, but
+            // VoiceOver still reads the title, and hovering shows it (.help).
+            // The title and icon switch between Pause and Resume.
+            let pauses = player.state == .playing || player.state == .connecting
+            Button {
                 player.togglePause()
+            } label: {
+                Label(pauses ? "Pause" : "Resume", systemImage: pauses ? "pause.fill" : "play.fill")
+                    .labelStyle(.iconOnly)
+                    // The same width for both icons, so Stop doesn't shift over.
+                    .frame(width: 18)
             }
+            .help(pauses ? "Pause (Command-P)" : "Resume (Command-P)")
             .disabled(player.station == nil)
 
-            Button("Stop") { player.stop() }
-                .disabled(!player.isActive)
+            Button {
+                player.stop()
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 18)
+            }
+            .help("Stop (Command-Period)")
+            .disabled(!player.isActive)
 
             // A pop-up button: Off, 15 minutes, 30 minutes, and so on.
             // The binding reads the current setting and starts the chosen timer.
@@ -275,14 +295,31 @@ struct NowPlayingBar: View {
             }
             .fixedSize()
 
-            // The volume slider, from 0 to 1 in steps of 0.05 (5%).
-            Slider(value: $player.volume, in: 0...1, step: 0.05) {
-                Text("Volume")
+            // The volume slider, from 0 to 1 in steps of 0.05 (5%), between
+            // a quiet speaker icon and a loud one. VoiceOver skips the icons
+            // (.accessibilityHidden) and reads just the slider.
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.fill")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Slider(value: $player.volume, in: 0...1, step: 0.05) {
+                    Text("Volume")
+                }
+                // The slider's "Volume" title is for VoiceOver; the icons show what it is.
+                .labelsHidden()
+                .frame(width: 150)
+                // VoiceOver reads the value as a percentage, such as "80 percent".
+                .accessibilityValue("\(Int((player.volume * 100).rounded())) percent")
+                // The hover tip is on the slider itself, not the whole group:
+                // a tip on the group made it something VoiceOver could stop on.
+                .help("Volume (Command-Up Arrow and Command-Down Arrow)")
+                Image(systemName: "speaker.wave.3.fill")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            .frame(width: 170)
-            // VoiceOver reads the value as a percentage, such as "80 percent".
-            .accessibilityValue("\(Int((player.volume * 100).rounded())) percent")
         }
+        // Buttons a little larger than standard, so the icons are easy to see and click.
+        .controlSize(.large)
         .padding()
     }
 }

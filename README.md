@@ -16,7 +16,13 @@ The Mac and iPhone versions share their stations, search, playback, sleep timer,
 
 ## Accessibility
 
-Crystal Set uses only standard controls: tabs, tables and lists, buttons, text fields, pickers, and a slider. Nothing is custom-drawn. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, sleep timer changes, and changes to favorites.
+Crystal Set uses only standard controls: tabs, tables and lists, buttons, text fields, pickers, and a slider. Nothing is custom-drawn; the few icons are Apple's built-in symbols. Every control has a plain text label. Important events are spoken through VoiceOver announcements: connecting, playing, paused, stopped, playback errors, search results, sleep timer changes, and changes to favorites.
+
+On the Mac:
+
+- The station that's playing has a speaker icon and a bold name in its list. VoiceOver reads it at the end of the name, such as "WOTR, now playing" (or "connecting" or "paused").
+- In Search results, stations already in your favorites have a star. VoiceOver reads it as "favorite", so you know whether Command-D will add or remove.
+- The Now Playing bar's Pause/Resume and Stop buttons show the usual playback icons. VoiceOver reads them by name, and hovering the pointer shows the name and shortcut.
 
 On iPhone, with VoiceOver:
 
@@ -172,7 +178,7 @@ New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a gui
 | `Shared/ImportExport.swift` | Importing and exporting favorites as JSON (Mac and iPhone) |
 | `macOS/CrystalSetApp.swift` | Mac app entry point and menu commands |
 | `macOS/ContentView.swift` | Mac window: Favorites and Search tabs, Now Playing bar, Rename sheet |
-| `macOS/StationTable.swift` | Mac station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions |
+| `macOS/StationTable.swift` | Mac station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions, playing and favorite icons |
 | `macOS/Info.plist` | Mac app settings (name, ID, allowing http streams) |
 | `iOS/CrystalSetPhoneApp.swift` | iPhone app entry point |
 | `iOS/PhoneViews.swift` | iPhone screens: Favorites, Search, Now Playing, station rows with VoiceOver actions, Magic Tap |

@@ -16,6 +16,8 @@
 //   - StationNSTableView: the table itself, with extra keys (Return, Space,
 //     Command-Delete) and the VoiceOver selection check.
 //   - StationRowView: one row, with VoiceOver's actions and menu.
+//   - StationNameCellView: the Name cell, with a speaker icon on the playing
+//     station and (in Search results) a star on stations already in Favorites.
 
 import AppKit
 import SwiftUI
@@ -40,6 +42,12 @@ struct StationTable: NSViewRepresentable {
     let title: String
     /// Command-Delete removes the selected station (Favorites only).
     var allowsDelete = false
+    /// Stars stations that are already favorites. On for Search results only,
+    /// since every row in Favorites would have one.
+    var showsFavoriteStars = false
+    // The player, watched so the speaker icon moves when another station
+    // plays. (`@ObservedObject` makes SwiftUI call updateNSView when it changes.)
+    @ObservedObject var player: Player
 
     // SwiftUI calls this once to create the helper object.
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -108,6 +116,8 @@ struct StationTable: NSViewRepresentable {
             coordinator.reload()
         }
         coordinator.syncSelection()
+        // Move the speaker icon and stars if playback or favorites changed.
+        coordinator.refreshNameCells()
     }
 
     // MARK: Columns
@@ -215,16 +225,35 @@ struct StationTable: NSViewRepresentable {
             model?.playOrPause(station)
         }
 
-        /// VoiceOver's VO-Space selects a row through the accessibility API
-        /// rather than the keyboard or mouse; treat that as "play this station".
-        /// Both the table and the row may report the same selection, so ignore
-        /// a repeat for the same row within a second.
-        func accessibilitySelected(row: Int) {
+        /// VoiceOver selects rows through the accessibility API rather than
+        /// the keyboard or mouse, in two different situations:
+        ///
+        ///   1. Moving the VoiceOver cursor (VO-Up/Down Arrow, or VO-Left/Right
+        ///      Arrow past the end of a row). With "keyboard focus follows the
+        ///      VoiceOver cursor" on (VoiceOver's default), VoiceOver selects
+        ///      each row it lands on. That must NOT play: it's just browsing.
+        ///   2. VO-Space on a row. That should play.
+        ///
+        /// Both arrive the same way, so the difference is whether the row was
+        /// already selected. Moving the cursor selects a new row; VO-Space
+        /// selects the row the cursor (and so the selection) is already on.
+        /// If the VoiceOver cursor isn't following focus, the first VO-Space
+        /// on a row selects it and a second one plays it.
+        ///
+        /// `wasSelected` is whether the row was selected just before this
+        /// report. Both the table and the row may report the same selection
+        /// (the second report sees the row already selected), so any repeat
+        /// for the same row within half a second is ignored.
+        func accessibilitySelected(row: Int, wasSelected: Bool) {
             let now = Date()
-            if row == lastAccessibilityRow, now.timeIntervalSince(lastAccessibilityTime) < 1 { return }
+            if row == lastAccessibilityRow, now.timeIntervalSince(lastAccessibilityTime) < 0.5 { return }
             lastAccessibilityRow = row
             lastAccessibilityTime = now
-            play(row: row)
+            if wasSelected {
+                play(row: row)
+            }
+            // Otherwise VoiceOver just moved to this row; the selection has
+            // already changed (and been passed to SwiftUI), and nothing plays.
         }
         // The last row VoiceOver selected, and when.
         private var lastAccessibilityRow = -1
@@ -282,6 +311,14 @@ struct StationTable: NSViewRepresentable {
             guard let tableColumn, let column = Column(rawValue: tableColumn.identifier.rawValue),
                   let station = station(at: row) else { return nil }
 
+            // The Name column has its own cell, with room for the icons.
+            if column == .name {
+                let cell = tableView.makeView(withIdentifier: tableColumn.identifier, owner: nil)
+                    as? StationNameCellView ?? StationNameCellView(identifier: tableColumn.identifier)
+                configure(cell, for: station)
+                return cell
+            }
+
             // Reuse a cell that has scrolled out of sight if there is one;
             // otherwise make a new one.
             let cell: NSTableCellView
@@ -309,6 +346,44 @@ struct StationTable: NSViewRepresentable {
             // Hovering the pointer shows the full text.
             cell.textField?.toolTip = text.isEmpty ? nil : text
             return cell
+        }
+
+        // MARK: Speaker icon and stars
+
+        /// Whether a station is the one playing, and how, for its speaker icon.
+        /// Nil means no icon: another station is playing, or nothing is.
+        func playMark(for station: Station) -> StationNameCellView.PlayMark? {
+            guard let player = parent?.player, player.station?.id == station.id else { return nil }
+            switch player.state {
+            case .playing: return .playing
+            case .connecting: return .connecting
+            case .paused: return .paused
+            // No icon after Stop, or when the stream failed to play.
+            case .stopped, .failed: return nil
+            }
+        }
+
+        private func configure(_ cell: StationNameCellView, for station: Station) {
+            let starred = parent?.showsFavoriteStars == true && model?.isFavorite(station) == true
+            cell.configure(name: station.name, mark: playMark(for: station), isFavorite: starred)
+        }
+
+        /// Brings the Name cells on screen up to date, without reloading the
+        /// table. A reload would replace the cells and could make VoiceOver
+        /// lose its place; this only changes what has changed. Rows scrolled
+        /// out of sight get set up fresh when they come back (see viewFor).
+        func refreshNameCells() {
+            guard let table else { return }
+            let column = table.column(withIdentifier: Column.name.identifier)
+            guard column >= 0 else { return }
+            // The rows currently visible in the scroll view.
+            let visible = table.rows(in: table.visibleRect)
+            for row in visible.location..<(visible.location + visible.length) {
+                guard let station = station(at: row),
+                      let cell = table.view(atColumn: column, row: row, makeIfNecessary: false)
+                        as? StationNameCellView else { continue }
+                configure(cell, for: station)
+            }
         }
 
         // The table asks: what kind of row view? Ours (StationRowView, below)
@@ -417,6 +492,9 @@ final class StationNSTableView: NSTableView {
     /// Called when an assistive app (VoiceOver) changes the selection.
     /// Keyboard and mouse selection don't come through here.
     override func setAccessibilitySelectedRows(_ rows: [any NSAccessibilityRow]) {
+        // Which row was selected before VoiceOver's change, so the coordinator
+        // can tell VO-Space (same row) from moving the cursor (a new row).
+        let before = selectedRow
         super.setAccessibilitySelectedRows(rows)
         // Read the row through NSArray, never `rows.first` or `rows[0]`.
         //
@@ -429,9 +507,9 @@ final class StationNSTableView: NSTableView {
         // check, so `as? StationRowView` just gives nil for an odd object.
         let first = (rows as NSArray).firstObject
         if rows.count == 1, let rowView = first as? StationRowView, let row = rowView.currentRow {
-            coordinator?.accessibilitySelected(row: row)
+            coordinator?.accessibilitySelected(row: row, wasSelected: row == before)
         } else if rows.count == 1, selectedRow >= 0 {
-            coordinator?.accessibilitySelected(row: selectedRow)
+            coordinator?.accessibilitySelected(row: selectedRow, wasSelected: selectedRow == before)
         }
     }
 }
@@ -446,10 +524,13 @@ final class StationRowView: NSTableRowView {
     var currentRow: Int? { coordinator?.row(for: stationID) }
     private var row: Int? { currentRow }
 
-    /// VoiceOver selecting this row (VO-Space) plays it.
+    /// VoiceOver selecting this row: VO-Space plays it, but moving the
+    /// VoiceOver cursor onto it only selects it (see accessibilitySelected).
     override func setAccessibilitySelected(_ selected: Bool) {
+        // Whether this row was already selected, checked before the change.
+        let wasSelected = isSelected
         super.setAccessibilitySelected(selected)
-        if selected, let row { coordinator?.accessibilitySelected(row: row) }
+        if selected, let row { coordinator?.accessibilitySelected(row: row, wasSelected: wasSelected) }
     }
 
     // VoiceOver's "press" action, which VO-Shift-Space (a mouse click) also reaches.
@@ -480,5 +561,159 @@ final class StationRowView: NSTableRowView {
                 return true
             },
         ]
+    }
+}
+
+/// The Name cell: the station's name, with a speaker icon in front of the
+/// playing station and, in Search results, a star on stations that are
+/// already favorites.
+///
+/// VoiceOver doesn't read the icons themselves (an icon would be spoken as
+/// "image"). Instead the same information is added to the end of the name it
+/// reads, such as "WOTR, favorite, now playing", so VoiceOver users get what
+/// the icons show.
+final class StationNameCellView: NSTableCellView {
+    /// What the speaker icon shows, and the words VoiceOver adds for it.
+    enum PlayMark {
+        case playing, connecting, paused
+
+        // The SF Symbols name (Apple's built-in icon set) for each.
+        var symbol: String {
+            switch self {
+            case .playing: return "speaker.wave.2.fill"
+            case .connecting: return "speaker.fill"
+            case .paused: return "pause.fill"
+            }
+        }
+
+        var spoken: String {
+            switch self {
+            case .playing: return "now playing"
+            case .connecting: return "connecting"
+            case .paused: return "paused"
+            }
+        }
+    }
+
+    private let speaker = DecorativeImageView()
+    private let star = DecorativeImageView()
+    // What the cell shows now, so configure can skip work when nothing changed.
+    // (Setting the same text again could make VoiceOver re-read the row.)
+    private var shown: (name: String, mark: PlayMark?, isFavorite: Bool)?
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+
+        // Small icons, sized to sit beside the text.
+        let size = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        speaker.symbolConfiguration = size
+        speaker.contentTintColor = .controlAccentColor
+        star.symbolConfiguration = size
+        star.image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: nil)
+        star.contentTintColor = .systemYellow
+        star.toolTip = "Favorite"
+        for icon in [speaker, star] {
+            // Hidden from VoiceOver; the words are in the name instead (see above).
+            icon.setAccessibilityElement(false)
+            // Icons keep their size; the name gets the rest of the width.
+            icon.setContentHuggingPriority(.required, for: .horizontal)
+            icon.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
+
+        // Text too long for the column ends in "…". SpokenTextField (below)
+        // lets VoiceOver read more than the name on screen.
+        let field = SpokenTextField(labelWithString: "")
+        field.lineBreakMode = .byTruncatingTail
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField = field
+
+        // A stack view lines the pieces up left to right. A hidden icon takes
+        // no room, so the name moves over when there's no icon.
+        let stack = NSStackView(views: [speaker, star, field])
+        stack.orientation = .horizontal
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        // Fill the cell's width (2 points in from each side), centered vertically.
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    // AppKit sets this to `.emphasized` while the row is selected (the blue
+    // highlight). The blue speaker icon would vanish against it, so it turns
+    // white like the text does, and back to blue when the row is deselected.
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            speaker.contentTintColor = backgroundStyle == .emphasized
+                ? .alternateSelectedControlTextColor : .controlAccentColor
+        }
+    }
+
+    // Required by AppKit for views loaded from interface files, which this app doesn't use.
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    // What VoiceOver finds inside this cell: only the name. Without this,
+    // VoiceOver still found the speaker icon and read Apple's built-in name
+    // for it, "volume high, image", whatever the volume. The name already
+    // ends with "now playing" (or "favorite"), so the icon adds nothing.
+    override func accessibilityChildren() -> [Any]? {
+        textField.map { [$0] }
+    }
+
+    func configure(name: String, mark: PlayMark?, isFavorite: Bool) {
+        if let shown, shown.name == name, shown.mark == mark, shown.isFavorite == isFavorite { return }
+        shown = (name, mark, isFavorite)
+
+        speaker.isHidden = mark == nil
+        if let mark {
+            speaker.image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: nil)
+            speaker.toolTip = mark.spoken.prefix(1).uppercased() + mark.spoken.dropFirst()
+        }
+        star.isHidden = !isFavorite
+
+        guard let field = textField else { return }
+        field.stringValue = name
+        // Hovering the pointer shows the full name.
+        field.toolTip = name.isEmpty ? nil : name
+        // The playing station's name is bold, so it stands out at a glance.
+        field.font = mark == nil ? .systemFont(ofSize: NSFont.systemFontSize)
+                                 : .boldSystemFont(ofSize: NSFont.systemFontSize)
+        // What VoiceOver reads: the name, then what the icons show.
+        var spoken = [name]
+        if isFavorite { spoken.append("favorite") }
+        if let mark { spoken.append(mark.spoken) }
+        (field as? SpokenTextField)?.spokenText = spoken.joined(separator: ", ")
+    }
+}
+
+/// An icon that's only for the eye. VoiceOver skips it.
+///
+/// `setAccessibilityElement(false)` alone wasn't enough: an image view's
+/// accessibility comes partly from its inner "cell", which still told
+/// VoiceOver about the picture. Overriding these two answers hides it
+/// whichever way VoiceOver asks.
+final class DecorativeImageView: NSImageView {
+    override func isAccessibilityElement() -> Bool { false }
+    override func accessibilityChildren() -> [Any]? { [] }
+}
+
+/// A text label that VoiceOver reads differently from what it shows: the
+/// station's name on screen, but "WOTR, favorite, now playing" for VoiceOver.
+///
+/// Why a subclass: calling `setAccessibilityValue` on a plain label didn't
+/// stick, because the label works out its value from its text each time
+/// VoiceOver asks. (The "now playing" VoiceOver used to read came from the
+/// speaker icon's hover tip; hiding the icon hid the words too.) Answering
+/// the question ourselves, here, always gives VoiceOver the full text.
+final class SpokenTextField: NSTextField {
+    /// What VoiceOver reads. Nil means just the text on screen.
+    var spokenText: String?
+
+    override func accessibilityValue() -> String? {
+        spokenText ?? super.accessibilityValue()
     }
 }

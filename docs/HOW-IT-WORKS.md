@@ -106,7 +106,7 @@ Here's the whole journey on the Mac, from pressing Return on a favorite to heari
 5. **Playlist links are opened.** `Player.swift`, `StreamResolver.resolve(_:)`. If the address is a playlist (`.pls`, `.m3u` or `.asx`), it downloads the playlist and finds the real stream address inside.
 6. **AVPlayer starts streaming.** `Player.swift`, `Player.start(_:)`. AVPlayer is Apple's player, and it does the actual streaming. The Player also starts listening for show titles and for failure.
 7. **Sound arrives.** `Player.swift`, `timeControlChanged(_:)`. AVPlayer reports that it's playing. The Player sets the state to "Playing" and VoiceOver says "Playing …".
-8. **The window updates itself.** Because `state` and `station` are `@Published`, the Now Playing bar in `ContentView.swift` redraws with the new name and status, and the Pause button's title updates too.
+8. **The window updates itself.** Because `state` and `station` are `@Published`, the Now Playing bar in `ContentView.swift` redraws with the new name and status, and the Pause button's title and icon update too. The station tables watch the Player as well, so the speaker icon moves to the playing row (`StationTable.swift`, `Coordinator.refreshNameCells()`). It changes the cells already on screen instead of reloading the table, so VoiceOver doesn't lose its place.
 
 If the stream can't be opened, step 6 calls `fail(_:)` instead. That sets the state to "Could not play: …", with the reason.
 
@@ -114,9 +114,11 @@ If the stream can't be opened, step 6 calls `fail(_:)` instead. That sets the st
 
 In VoiceOver, VO-Space performs an item's default action. On a table row, VoiceOver's default action is to *select* the row, not to press it. So the table can't simply wait for a press.
 
-The trick is in how the selection arrives. When you select a row with the arrow keys or the mouse, the table changes its own selection. When VoiceOver selects a row, it goes through the accessibility interface instead: it calls `setAccessibilitySelectedRows(_:)` on the table, or `setAccessibilitySelected(_:)` on the row. Crystal Set replaces both functions (`StationTable.swift`, in `StationNSTableView` and `StationRowView`). Each one does the normal selection and then plays the station.
+The trick is in how the selection arrives. When you select a row with the arrow keys or the mouse, the table changes its own selection. When VoiceOver selects a row, it goes through the accessibility interface instead: it calls `setAccessibilitySelectedRows(_:)` on the table, or `setAccessibilitySelected(_:)` on the row. Crystal Set replaces both functions (`StationTable.swift`, in `StationNSTableView` and `StationRowView`).
 
-Both functions can fire for the same VO-Space press, so `Coordinator.accessibilitySelected(row:)` ignores a second request for the same row within a second.
+There's a catch. VoiceOver also selects rows this way when you simply move around: VO-Up and VO-Down Arrow, or VO-Right Arrow past the last column, land on a new row, and (with VoiceOver's default "keyboard focus follows the VoiceOver cursor") VoiceOver selects it. An early version played on every one of those, so browsing the list changed the station. The difference is whether the row was already selected. Moving the cursor selects a *new* row; VO-Space selects the row you're already on. So each function notes whether the row was selected before the change, and `Coordinator.accessibilitySelected(row:wasSelected:)` plays only if it was. Moving just selects.
+
+Both functions can fire for the same VO-Space press (and the second one sees the row already selected), so `accessibilitySelected` ignores a second request for the same row within half a second.
 
 ## 5. How favorites are saved
 
