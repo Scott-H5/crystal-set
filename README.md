@@ -123,6 +123,37 @@ Apple then processes the build, usually in 5 to 30 minutes, and emails you. In A
 
 Both versions are the same app in App Store Connect, so the iPhone and Mac builds appear side by side in its TestFlight tab. Install the Mac build with the TestFlight app for the Mac.
 
+## TestFlight from the terminal
+
+`asc.sh` manages TestFlight through the App Store Connect API, so the App Store Connect website (hard to use with VoiceOver) is rarely needed:
+
+```bash
+~/dev/crystal-set/asc.sh status
+```
+
+| Command | What it does |
+| --- | --- |
+| `asc.sh status` | The newest iPhone and Mac builds and where each stands: processing, waiting for review, approved… |
+| `asc.sh testers` | Who is in the external Testers group |
+| `asc.sh add-tester EMAIL [FIRST LAST]` | Adds someone; TestFlight emails them an invitation once a build is approved |
+| `asc.sh remove-tester EMAIL` | Removes someone |
+| `asc.sh link` / `link on [LIMIT]` / `link off` | Shows, turns on (optionally capped at LIMIT testers) or turns off the public link anyone can join with |
+| `asc.sh submit ios` / `submit mac` | Takes the newest build, adds the What to Test notes from `testflight-notes.txt`, gives it to the Testers group and sends it to Beta App Review. It waits for Apple to finish processing a fresh upload, and asks before sending. |
+
+A new release is then: `testflight.sh ios`, then `asc.sh submit ios` (and the same with `mac`).
+
+It needs an App Store Connect API key, created once under Users and Access > Integrations > App Store Connect API (Team Keys, App Manager role). The key file goes in `~/.appstoreconnect/private_keys/`, readable only by you (`chmod 600`); Apple lets you download it only once, so keep a backup somewhere safe. The key's settings go in `~/.appstoreconnect/crystal-set.env`:
+
+```bash
+ASC_KEY_ID=…              # the Key ID shown beside the key
+ASC_ISSUER_ID=…           # the Issuer ID at the top of the keys page
+ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_….p8"
+ASC_APP_ID=…              # the number in the app's App Store Connect address
+ASC_EXTERNAL_GROUP_ID=…   # the external group's ID, from its address
+```
+
+Nothing about the key is in this project, so it's never committed. `tools/asc.swift` explains how the API is signed and called.
+
 ## Keyboard shortcuts
 
 ### In a station table (Favorites or Search results)

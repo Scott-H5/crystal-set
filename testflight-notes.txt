@@ -1,0 +1,6 @@
+Please try the controls, how easy the app is to use, and how well it works with accessibility features. For example:
+- Search for stations, play them, and add a few to Favorites.
+- Pause, stop, and skip between stations, from the app, the Lock Screen, headphones, or the Mac's keyboard.
+- Try the sleep timer.
+- If you use VoiceOver, Voice Control, Switch Control, Full Keyboard Access, Larger Text or other accessibility settings, please try the app with them, and tell me anything that's confusing, hard to reach, or not announced.
+Feedback of any kind is welcome: use the TestFlight app's Send Feedback, or email scott_howell@icloud.com.
