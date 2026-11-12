@@ -355,7 +355,7 @@ final class AppModel: ObservableObject {
     /// This is different from playAdjacent (Command-Arrow), which steps through
     /// the selected row in the tab on screen. From the lock screen you can't
     /// see the screen, so this steps from the *playing* station, through
-    /// whichever list it's in (favorites first). It also wraps around from the
+    /// whichever list it's in (favorites first). Both wrap around from the
     /// last station to the first, so a press always plays something instead of
     /// silently doing nothing at the end of the list.
     private func playAdjacentFromRemote(_ offset: Int) {
@@ -470,13 +470,15 @@ final class AppModel: ObservableObject {
         let anchor = currentSelection ?? player.station?.id
         // Find that station's position in the list (0 is the first).
         let index = anchor.flatMap { id in list.firstIndex { $0.id == id } }
-        // Step from it. With nothing to start from, go to the first or last station.
-        let next = index.map { $0 + offset } ?? (offset > 0 ? 0 : list.count - 1)
-        // Stop at the ends of the list instead of wrapping around.
-        guard list.indices.contains(next) else {
-            announce(offset > 0 ? "Last station" : "First station")
-            return
-        }
+        // Step from it, wrapping around at the ends: Next on the last station
+        // goes to the first, and Previous on the first goes to the last, so
+        // you can keep pressing without having to turn back.
+        // `%` is the remainder after dividing. Adding list.count first keeps
+        // the number from going below zero when stepping back from the first
+        // station (0 - 1 + count = count - 1, the last station).
+        // With nothing to start from, go to the first or last station.
+        let next = index.map { ($0 + offset + list.count) % list.count }
+            ?? (offset > 0 ? 0 : list.count - 1)
         currentSelection = list[next].id
         play(list[next])
     }

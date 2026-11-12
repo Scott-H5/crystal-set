@@ -98,7 +98,7 @@ Every row also has a context menu (VO-Shift-M) and VoiceOver actions (VO-Command
 | Pause or resume | Command-P |
 | Stop | Command-Period |
 | Reconnect to the current stream | Command-R |
-| Next / previous station in the current list | Command-Right Arrow / Command-Left Arrow |
+| Next / previous station in the current list (wraps around at the ends) | Command-Right Arrow / Command-Left Arrow |
 | Volume up / down (5% steps) | Command-Up Arrow / Command-Down Arrow |
 | Change sleep timer (Off, 15, 30, 45, 60, 90 minutes) | Command-T |
 | Speak what's playing, including sleep time left | Command-I |
