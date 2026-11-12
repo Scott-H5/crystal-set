@@ -36,12 +36,15 @@ On iPhone, with VoiceOver:
 
 ## Requirements
 
-- **Mac version:** macOS 13 Ventura or later, and Xcode or the Xcode Command Line Tools (for `swiftc`).
-- **iPhone version:** iOS 17 or later; Xcode, signed in to your Apple ID (Xcode > Settings > Accounts); [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`); and an iPhone with Developer Mode turned on.
+- **Both versions:** Xcode, signed in to your Apple ID (Xcode > Settings > Accounts); [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`); and your Apple team ID in `ios-team.txt` (see step 1 under Build the iPhone version).
+- **Mac version:** macOS 13 Ventura or later.
+- **iPhone version:** iOS 17 or later, and an iPhone with Developer Mode turned on.
 
 ## Build the Mac version
 
-There is no Xcode project for the Mac version. The build script compiles the sources with `swiftc` and produces an ad hoc signed app bundle. It works from any folder.
+Both versions are described in `project.yml`. `build.sh` turns that into an Xcode project with XcodeGen and builds the Mac version with `xcodebuild`, signed with your Apple team (the team ID in `ios-team.txt`). You don't need to open Xcode, and the script works from any folder.
+
+Why it's signed with your team rather than "ad hoc": iCloud sync and TestFlight both need an app signed by an Apple Developer team. The first build may take a little longer, because Xcode creates your signing certificate.
 
 To build and install in one step:
 
@@ -57,7 +60,7 @@ To build without installing:
 bash ~/dev/crystal-set/build.sh
 ```
 
-The app is written to `build/Crystal Set.app` in the project folder.
+The app is written to `build/mac/Build/Products/Release/CrystalSet.app` in the project folder. Installing copies it to Applications as `Crystal Set.app`.
 
 (Adjust the path if you cloned the project somewhere other than `~/dev/crystal-set`.)
 
@@ -82,6 +85,22 @@ The iPhone version is described in `project.yml`. The script `ios.sh` turns that
 4. With a free Apple ID (a "Personal Team"), the first time you open the app iOS says the developer isn't trusted. Go to Settings > General > VPN & Device Management, choose your Apple ID under Developer App, and choose Trust.
 
 With a free Personal Team, an installed app stops opening after 7 days. Run `ios.sh install` again to renew it; your favorites are kept. A paid Apple Developer Program membership extends this to a year and adds TestFlight.
+
+If Xcode keeps making 7-day profiles after your paid membership starts, it's reusing a profile it saved before. Move the Crystal Set profile out of `~/Library/Developer/Xcode/UserData/Provisioning Profiles/` and build again; Xcode then fetches a one-year profile.
+
+## Upload to TestFlight
+
+With a paid Apple Developer Program membership and an app record in [App Store Connect](https://appstoreconnect.apple.com) for the bundle ID `io.github.scott-h5.crystalset`:
+
+```bash
+~/dev/crystal-set/testflight.sh ios
+```
+
+This makes a Release "archive" signed for distribution, then uploads it to App Store Connect, signed in as the Apple ID in Xcode > Settings > Accounts. No App Store Connect API key is needed. The first run creates your Apple Distribution certificate. Each upload gets the date and time as its build number, such as 202611121430, because App Store Connect refuses a build number it has already seen.
+
+Apple then processes the build, usually in 5 to 30 minutes, and emails you. In App Store Connect, open the app's TestFlight tab and add yourself under Internal Testing; then install it with Apple's TestFlight app. Internal testers don't need App Review. TestFlight builds expire after 90 days, so upload a new one before then.
+
+The Mac version isn't on TestFlight yet: Apple requires Mac apps there to run in the App Sandbox, which comes next.
 
 ## Keyboard shortcuts
 

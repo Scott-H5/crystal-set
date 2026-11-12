@@ -1,18 +1,22 @@
 # project.yml
 #
-# Describes the iPhone version of Crystal Set for XcodeGen, which turns this
-# file into an Xcode project (CrystalSet.xcodeproj). The Xcode project is
-# generated, not stored in git: edit this file instead, and ios.sh
-# regenerates the project every time it builds.
+# Describes both versions of Crystal Set, Mac and iPhone, for XcodeGen,
+# which turns this file into an Xcode project (CrystalSet.xcodeproj). The
+# Xcode project is generated, not stored in git: edit this file instead.
+# build.sh (Mac) and ios.sh (iPhone) regenerate it every time they build.
 #
-# The Mac version doesn't use this file; it's built by build.sh.
+# Why the Mac version is here too: it used to be compiled straight with
+# swiftc and signed "ad hoc" (with no certificate). iCloud and TestFlight
+# both need an app signed by your Apple Developer team, with a provisioning
+# profile, and xcodebuild handles all of that automatically.
 
 name: CrystalSet
 
 options:
-  # The oldest iOS version the app runs on.
+  # The oldest system versions the app runs on.
   deploymentTarget:
     iOS: "17.0"
+    macOS: "13.0"
 
 settings:
   base:
@@ -23,6 +27,35 @@ settings:
     CODE_SIGN_STYLE: Automatic
 
 targets:
+  CrystalSet-macOS:
+    type: application
+    platform: macOS
+    # Code shared with the iPhone version, plus the Mac's own window and menus.
+    sources:
+      - Shared
+      - path: macOS
+        # Info.plist is the app's settings file, not a source file; it's
+        # named in INFOPLIST_FILE below instead. (AppIcon.icns is copied
+        # into the app's Resources folder, as before.)
+        excludes: [Info.plist]
+    scheme: {}
+    settings:
+      base:
+        # The app is built as CrystalSet.app; build.sh installs it as
+        # "Crystal Set.app". Finder and the menu bar show CFBundleName
+        # ("Crystal Set") either way.
+        PRODUCT_NAME: CrystalSet
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.scott-h5.crystalset
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: macOS/Info.plist
+        # Sign with your team's "Apple Development" certificate, not ad hoc.
+        CODE_SIGN_IDENTITY: Apple Development
+        # The hardened runtime is a set of security protections Apple requires
+        # for apps distributed outside the App Store, and recommends for all.
+        # Crystal Set needs none of the exceptions it can switch off.
+        ENABLE_HARDENED_RUNTIME: YES
+
   CrystalSet-iOS:
     type: application
     platform: iOS
@@ -48,6 +81,15 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: Crystal Set
+        # Version numbers come from MARKETING_VERSION and CURRENT_PROJECT_VERSION
+        # above, so testflight.sh can give each upload a new build number.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Answers App Store Connect's export-compliance question ("does the
+        # app use encryption?") once, here, instead of for every build. The
+        # answer is no: the only encryption is standard HTTPS, built into iOS,
+        # which US export rules exempt.
+        ITSAppUsesNonExemptEncryption: false
         # Keep playing when the screen locks or you switch to another app.
         UIBackgroundModes: [audio]
         # Many old time radio streams are plain http:// Shoutcast/Icecast servers.

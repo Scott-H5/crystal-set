@@ -85,7 +85,7 @@ Then rebuild, and the app is back to normal.
 | `macOS/StationTable.swift` | The Mac's two station tables, including the keys and VoiceOver behavior on table rows. |
 | `iOS/CrystalSetPhoneApp.swift` | Where the iPhone version starts. Creates the AppModel and shows the tabs. |
 | `iOS/PhoneViews.swift` | The iPhone's screens: the Favorites, Search and Now Playing tabs, station rows and their VoiceOver actions, the Now Playing bar, and the Rename alert. |
-| `project.yml` | Describes the iPhone version for XcodeGen, which turns it into an Xcode project. |
+| `project.yml` | Describes both versions for XcodeGen, which turns it into an Xcode project. |
 | `build.sh`, `ios.sh` | Build (and install) the Mac and iPhone versions. |
 
 The files work together like this:
@@ -131,8 +131,10 @@ Both functions can fire for the same VO-Space press (and the second one sees the
 
 The Mac and iPhone versions are built from the same `Shared` code plus their own screens:
 
-- **Mac:** `build.sh` compiles `Shared` and `macOS` together with `swiftc`.
-- **iPhone:** `ios.sh` builds `Shared` and `iOS` together. It uses an Xcode project that XcodeGen creates from `project.yml`.
+- **Mac:** `build.sh` builds `Shared` and `macOS` together.
+- **iPhone:** `ios.sh` builds `Shared` and `iOS` together.
+
+Both use the same Xcode project, which XcodeGen creates from `project.yml`; it has one "target" (a recipe for one app) per platform. Both are signed with your Apple Developer team, which iCloud and TestFlight require.
 
 Where the shared code needs to differ, it's marked like this:
 
