@@ -299,6 +299,25 @@ struct StationTable: NSViewRepresentable {
             model?.renamingStation = station
         }
 
+        // VoiceOver's Move Up and Move Down, in the Favorites table only.
+        // True if the favorite in this row can move by `offset` (-1 up,
+        // +1 down): not the first one up, or the last one down.
+        func canMoveFavorite(row: Int, by offset: Int) -> Bool {
+            guard parent?.allowsDelete == true, let model else { return false }
+            return model.favorites.indices.contains(row + offset)
+        }
+
+        // Selects the row and moves it, using the same code as the Move Up
+        // and Move Down buttons and menu items (which also says the new
+        // position, such as "Position 3 of 10"). Rows remember their station
+        // rather than their number, so the VoiceOver cursor moves with it.
+        func moveFavorite(row: Int, by offset: Int) {
+            guard canMoveFavorite(row: row, by: offset),
+                  let station = station(at: row), let model else { return }
+            model.favoriteSelection = station.id
+            model.moveSelectedFavorite(by: offset)
+        }
+
         func favoriteActionTitle(row: Int) -> String {
             if let station = station(at: row), model?.isFavorite(station) == true {
                 return "Remove from Favorites"
@@ -454,9 +473,26 @@ struct StationTable: NSViewRepresentable {
                 rename.target = self
                 rename.tag = row
                 menu.addItem(rename)
+
+                // Move Up and Move Down, the same as VoiceOver's actions:
+                // left off the first favorite (up) and the last (down).
+                if canMoveFavorite(row: row, by: -1) {
+                    let up = NSMenuItem(title: "Move Up", action: #selector(menuMoveUp(_:)), keyEquivalent: "")
+                    up.target = self
+                    up.tag = row
+                    menu.addItem(up)
+                }
+                if canMoveFavorite(row: row, by: 1) {
+                    let down = NSMenuItem(title: "Move Down", action: #selector(menuMoveDown(_:)), keyEquivalent: "")
+                    down.target = self
+                    down.tag = row
+                    menu.addItem(down)
+                }
             }
         }
 
+        @objc private func menuMoveUp(_ sender: NSMenuItem) { moveFavorite(row: sender.tag, by: -1) }
+        @objc private func menuMoveDown(_ sender: NSMenuItem) { moveFavorite(row: sender.tag, by: 1) }
         @objc private func menuPlay(_ sender: NSMenuItem) { play(row: sender.tag) }
         @objc private func menuToggleFavorite(_ sender: NSMenuItem) { toggleFavorite(row: sender.tag) }
 
@@ -538,7 +574,8 @@ final class StationNSTableView: NSTableView {
 }
 
 /// A table row that VoiceOver can "press" (VO-Space) to play its station,
-/// with Play and Add to / Remove from Favorites as VoiceOver actions.
+/// with Play, Add to / Remove from Favorites and (for favorites) Move Up
+/// and Move Down as VoiceOver actions.
 final class StationRowView: NSTableRowView {
     weak var coordinator: StationTable.Coordinator?
     // The station this row shows.
@@ -572,9 +609,12 @@ final class StationRowView: NSTableRowView {
     }
 
     // The actions VoiceOver lists for this row (VO-Command-Space).
+    // Favorites also get Move Up and Move Down, matching the iPhone's
+    // Actions rotor: Move Up is left off the first favorite and Move Down
+    // off the last, since they can't go any further.
     override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
         guard let row, let coordinator else { return nil }
-        return [
+        var actions = [
             NSAccessibilityCustomAction(name: "Play") { [weak coordinator] in
                 coordinator?.play(row: row)
                 return true
@@ -584,6 +624,19 @@ final class StationRowView: NSTableRowView {
                 return true
             },
         ]
+        if coordinator.canMoveFavorite(row: row, by: -1) {
+            actions.append(NSAccessibilityCustomAction(name: "Move Up") { [weak coordinator] in
+                coordinator?.moveFavorite(row: row, by: -1)
+                return true
+            })
+        }
+        if coordinator.canMoveFavorite(row: row, by: 1) {
+            actions.append(NSAccessibilityCustomAction(name: "Move Down") { [weak coordinator] in
+                coordinator?.moveFavorite(row: row, by: 1)
+                return true
+            })
+        }
+        return actions
     }
 }
 
