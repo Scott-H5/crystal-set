@@ -282,10 +282,19 @@ final class AppModel: ObservableObject {
     // iCloud so your other devices get it (see "iCloud sync" below).
     @Published var favorites: [Station] = [] {
         didSet {
+            // Loading the saved list at startup isn't a change: don't write
+            // it back or send it anywhere. (Sending it was the bug that let
+            // a device's old list overwrite newer changes from another one.)
+            guard !loadingFromDisk else { return }
             saveFavorites()
+            // A change made here, not one arriving from iCloud: note when it
+            // happened, so the newest change wins when devices compare lists.
+            if !applyingICloudChange { favoritesChangedAt = Date() }
             sendFavoritesToICloud()
         }
     }
+    // True only while init() puts the saved list in place.
+    private var loadingFromDisk = false
     // The selected favorite's ID, or nil when nothing is selected.
     @Published var favoriteSelection: Station.ID?
 
@@ -351,7 +360,9 @@ final class AppModel: ObservableObject {
     init() {
         if let data = try? Data(contentsOf: favoritesFile),
            let saved = try? JSONDecoder().decode([Station].self, from: data) {
+            loadingFromDisk = true
             favorites = saved
+            loadingFromDisk = false
             favoriteSelection = saved.first?.id
         }
         setUpTrackCommands()
@@ -370,27 +381,53 @@ final class AppModel: ObservableObject {
     // and needs no setup on Apple's side beyond the entitlement in each app's
     // CrystalSet.entitlements.
     //
-    // The rules:
-    //   - Any change here (add, remove, rename, move, import) goes to iCloud.
-    //   - A change arriving from another device replaces the list here, so a
-    //     removal on one device removes the station everywhere.
-    //   - The first time a device meets the list in iCloud, it *merges*
-    //     instead: iCloud's stations in their order, then any of this
-    //     device's own stations that iCloud lacked. That way, turning sync on
-    //     for two devices that each have favorites loses neither list.
-    //   - If both devices change the list while one is offline, the change
-    //     made last wins when they reconnect.
+    // The rule is "the newest change wins". Every list, here and in iCloud,
+    // carries the date and time it was last changed by a person (adding,
+    // removing, renaming, moving or importing). Whenever a device sees the
+    // list in iCloud (at startup, and whenever another device changes it):
+    //   - If iCloud's list was changed more recently, it replaces this
+    //     device's list. A removal on one device removes it everywhere.
+    //   - If this device's list was changed more recently (say it was edited
+    //     while offline), this device sends its list to iCloud instead.
+    //   - If both were changed at the same moment, nothing happens.
+    // Opening the app is not a change, so a device that was asleep or closed
+    // for a while can never push its old list over newer edits.
+    //
+    // One exception: the very first time a device meets the list in iCloud,
+    // it *merges* instead: iCloud's stations in their order, then any of this
+    // device's stations that iCloud lacked. That way, turning sync on for two
+    // devices that each have favorites loses neither list.
+    //
+    // The dates come from each device's clock. Apple sets those
+    // automatically, so they agree to within a second or so; two edits made
+    // on two devices within the same second could go either way.
     //
     // Without iCloud (signed out, or iCloud Drive off) all of this quietly
     // does nothing and the app keeps its local list.
 
+    /// What's stored in iCloud: the list, plus when it was last changed.
+    private struct CloudFavorites: Codable {
+        var changedAt: Date
+        var stations: [Station]
+    }
+
     /// The key-value store shared by every copy of Crystal Set on your devices.
     private let cloud = NSUbiquitousKeyValueStore.default
-    /// The name the favorites list is stored under in iCloud.
-    private static let cloudFavoritesKey = "favorites"
+    /// The name the list (with its date) is stored under in iCloud.
+    ///
+    /// Why a new name: the first sync builds stored a bare list, with no
+    /// date, under "favorites". Those builds sent their list at every
+    /// startup, so a different name keeps any copy still installed from
+    /// overwriting the dated list. The old value is read once, below, when
+    /// nothing has been stored under the new name yet.
+    private static let cloudFavoritesKey = "favoritesWithDate"
+    private static let oldCloudFavoritesKey = "favorites"
     /// Remembers (in this device's settings) that this device has merged its
     /// list with iCloud's, so later changes replace rather than merge.
     private static let mergedWithICloudKey = "favoritesMergedWithICloud"
+    /// Remembers (in this device's settings) when this device's list last
+    /// changed: by a person here, or by taking a newer list from iCloud.
+    private static let changedAtKey = "favoritesChangedAt"
     // True while a list from iCloud is being applied, so applying it isn't
     // sent straight back to iCloud.
     private var applyingICloudChange = false
@@ -400,6 +437,23 @@ final class AppModel: ObservableObject {
     private var hasMergedWithICloud: Bool {
         get { UserDefaults.standard.bool(forKey: Self.mergedWithICloudKey) }
         set { UserDefaults.standard.set(newValue, forKey: Self.mergedWithICloudKey) }
+    }
+
+    /// When this device's list last changed.
+    ///
+    /// Builds before the dated sync didn't record this. For them it falls
+    /// back to when favorites.json was last written, which is when the list
+    /// last changed on this device; with no file either, it's "long ago", so
+    /// any list in iCloud counts as newer.
+    private var favoritesChangedAt: Date {
+        get {
+            if let date = UserDefaults.standard.object(forKey: Self.changedAtKey) as? Date {
+                return date
+            }
+            let attributes = try? FileManager.default.attributesOfItem(atPath: favoritesFile.path)
+            return attributes?[.modificationDate] as? Date ?? .distantPast
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.changedAtKey) }
     }
 
     private func startICloudSync() {
@@ -413,19 +467,33 @@ final class AppModel: ObservableObject {
             MainActor.assumeIsolated { self?.iCloudChanged(reason) }
         }
         // Ask for the latest from iCloud, then deal with what's there already.
+        // What's there may be out of date until Apple's copy arrives; that's
+        // safe, because only a newer list is ever sent, and the newer copy
+        // that arrives afterwards is compared again by date.
         cloud.synchronize()
         iCloudChanged(nil)
     }
 
-    /// The favorites list stored in iCloud, or nil if there isn't one (yet).
-    private var iCloudFavorites: [Station]? {
-        guard let data = cloud.data(forKey: Self.cloudFavoritesKey) else { return nil }
-        return try? JSONDecoder().decode([Station].self, from: data)
+    /// The list stored in iCloud with its date, or nil if there isn't one (yet).
+    private var iCloudFavorites: CloudFavorites? {
+        if let data = cloud.data(forKey: Self.cloudFavoritesKey),
+           let stored = try? JSONDecoder().decode(CloudFavorites.self, from: data) {
+            return stored
+        }
+        // A bare list from the first sync builds. It has no date, so it
+        // counts as older than any change made on this device.
+        if let data = cloud.data(forKey: Self.oldCloudFavoritesKey),
+           let stations = try? JSONDecoder().decode([Station].self, from: data) {
+            return CloudFavorites(changedAt: .distantPast, stations: stations)
+        }
+        return nil
     }
 
     private func sendFavoritesToICloud() {
         guard !applyingICloudChange,
-              let data = try? JSONEncoder().encode(favorites) else { return }
+              let data = try? JSONEncoder().encode(
+                CloudFavorites(changedAt: favoritesChangedAt, stations: favorites)
+              ) else { return }
         cloud.set(data, forKey: Self.cloudFavoritesKey)
     }
 
@@ -455,14 +523,34 @@ final class AppModel: ObservableObject {
         }
 
         if hasMergedWithICloud {
-            // Normal case: another device changed the list, so use it.
-            if remote != favorites { applyFromICloud(remote) }
+            // Normal case: the newest change wins.
+            let local = favoritesChangedAt
+            if remote.changedAt > local {
+                if remote.stations != favorites {
+                    applyFromICloud(remote.stations)
+                }
+                // Now this device is as up to date as iCloud.
+                favoritesChangedAt = remote.changedAt
+            } else if local > remote.changedAt {
+                // This device changed its list after iCloud's copy was made
+                // (or iCloud still holds an undated list from an old build).
+                sendFavoritesToICloud()
+            }
         } else {
             // First meeting: keep both lists.
             hasMergedWithICloud = true
-            let merged = Self.merge(remote, with: favorites)
-            if merged != favorites { applyFromICloud(merged) }
-            if merged != remote { sendFavoritesToICloud() }
+            let merged = Self.merge(remote.stations, with: favorites)
+            if merged == remote.stations {
+                // Nothing of this device's was missing, so iCloud's list is
+                // simply taken over, along with its date.
+                if merged != favorites { applyFromICloud(merged) }
+                favoritesChangedAt = remote.changedAt
+            } else {
+                // The merged list is new: date it now and share it.
+                applyFromICloud(merged)
+                favoritesChangedAt = Date()
+                sendFavoritesToICloud()
+            }
         }
     }
 

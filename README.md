@@ -231,8 +231,9 @@ Favorites sync between every copy of Crystal Set signed in to the same iCloud ac
 Each device also keeps its own copy, so Crystal Set works offline and without iCloud. The shared copy is kept in iCloud's key-value storage, Apple's simple sync for small data, under your team ID and the bundle ID; both apps ask for it in their `CrystalSet.entitlements` file.
 
 - The first time a device meets the list in iCloud, it merges: iCloud's stations in their order, then any of the device's own stations that were missing. So turning sync on for two devices that each have favorites loses neither list.
-- After that, a change on one device replaces the list on the others, so removing a station on one removes it everywhere.
-- If both devices change the list while one is offline, the change made last wins.
+- After that, the newest change wins. Each list carries the date and time someone last changed it, and devices compare those dates. The newer list replaces the older one, so removing a station on one device removes it everywhere.
+- Opening the app doesn't count as a change, so a device that was closed or offline for a while takes the newer list instead of sending its old one. (The first sync builds got this wrong: opening the app on one device could overwrite changes made on another.)
+- If both devices change the list while one is offline, the change made last wins when they reconnect.
 
 The code, with these rules in comments, is under "iCloud sync" in `Shared/Models.swift`.
 
