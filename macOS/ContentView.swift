@@ -309,6 +309,10 @@ struct NowPlayingBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // The playing station's logo, or a colored tile (hidden from VoiceOver).
+            if player.station != nil {
+                StationArtwork(station: player.station, size: 40)
+            }
             // Station name, with the status line underneath.
             VStack(alignment: .leading, spacing: 2) {
                 Text(player.station?.name ?? "Nothing playing")

@@ -58,6 +58,50 @@ struct Station: Codable, Identifiable, Hashable {
     /// pinned. It's part of the favorites list, so pins sync through iCloud
     /// with everything else.
     var pinned: Bool? = nil
+    /// The address of the station's logo, from Radio Browser ("favicon"),
+    /// shown by StationArtwork (Artwork.swift). Nil or empty when there isn't one.
+    var favicon: String? = nil
+    /// The two-letter country code, such as "GB" or "US", from Radio
+    /// Browser. Used for the short country name (displayCountry).
+    var countryCode: String? = nil
+
+    /// A short country name in the person's own language, such as "United
+    /// Kingdom" instead of Radio Browser's "The United Kingdom Of Great
+    /// Britain And Northern Ireland". Uses the country code when there is
+    /// one; otherwise the stored name, without a leading "The ".
+    var displayCountry: String {
+        if let code = countryCode, !code.isEmpty,
+           let name = Locale.current.localizedString(forRegionCode: code) {
+            return name
+        }
+        let name = country.hasPrefix("The ") ? String(country.dropFirst(4)) : country
+        return Self.shortCountryNames[name] ?? name
+    }
+
+    /// Radio Browser's official long names, and the names people use.
+    /// (Only needed for stations without a country code, such as imports.)
+    private static let shortCountryNames = [
+        "United Kingdom Of Great Britain And Northern Ireland": "United Kingdom",
+        "United States Of America": "United States",
+        "Russian Federation": "Russia",
+        "Republic Of Korea": "South Korea",
+        "Islamic Republic Of Iran": "Iran",
+        "Plurinational State Of Bolivia": "Bolivia",
+        "Bolivarian Republic Of Venezuela": "Venezuela",
+        "United Republic Of Tanzania": "Tanzania",
+        "Republic Of Moldova": "Moldova",
+        "Lao People's Democratic Republic": "Laos",
+        "Syrian Arab Republic": "Syria",
+        "Viet Nam": "Vietnam",
+        "Taiwan, Republic Of China": "Taiwan",
+    ]
+
+    /// The second line in lists: "United Kingdom · MP3 · 48 kbps".
+    var detailLine: String {
+        ([displayCountry] + [codec, bitrate > 0 ? "\(bitrate) kbps" : ""])
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
 
     /// Radio Browser stations use its station UUID as their ID. Stations added
     /// by hand or imported from a file get a prefixed ID instead.
@@ -98,6 +142,8 @@ struct APIStation: Decodable {
     let tags: String?
     let codec: String?
     let bitrate: Int?
+    let favicon: String?
+    let countrycode: String?
 
     /// Converts Radio Browser's version of a station into the app's own Station,
     /// filling in blanks for anything missing.
@@ -113,7 +159,9 @@ struct APIStation: Decodable {
             // Radio Browser sends "drama,otr"; add spaces so it reads "drama, otr".
             tags: (tags ?? "").replacingOccurrences(of: ",", with: ", "),
             codec: codec ?? "",
-            bitrate: bitrate ?? 0
+            bitrate: bitrate ?? 0,
+            favicon: (favicon ?? "").isEmpty ? nil : favicon,
+            countryCode: (countrycode ?? "").isEmpty ? nil : countrycode
         )
     }
 }
@@ -229,6 +277,31 @@ actor RadioBrowserClient {
         return try JSONDecoder().decode([APIStation].self, from: data)
             .map(\.station)
             .filter { !$0.url.isEmpty && seen.insert($0.id).inserted }
+    }
+
+    /// Looks up stations by their Radio Browser IDs (up to 100 at a time), to
+    /// fill in details saved favorites didn't have yet, such as the logo.
+    func lookUp(_ ids: [String]) async -> [Station] {
+        guard !ids.isEmpty else { return [] }
+        let base = await server()
+        var components = URLComponents(url: base.appendingPathComponent("json/stations/byuuid"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "uuids", value: ids.prefix(100).joined(separator: ","))]
+        guard let (data, _) = try? await session.data(from: components.url!),
+              let found = try? JSONDecoder().decode([APIStation].self, from: data) else { return [] }
+        return found.map(\.station)
+    }
+
+    /// Looks up one station by its stream address, for stations added by
+    /// address or imported from another app (they have no Radio Browser ID).
+    func lookUp(streamAddress: String) async -> Station? {
+        let base = await server()
+        var components = URLComponents(url: base.appendingPathComponent("json/stations/byurl"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "url", value: streamAddress)]
+        guard let (data, _) = try? await session.data(from: components.url!),
+              let found = try? JSONDecoder().decode([APIStation].self, from: data) else { return nil }
+        return found.first?.station
     }
 
     /// Tells Radio Browser a station was played (helps its popularity ranking).
@@ -377,6 +450,41 @@ final class AppModel: ObservableObject {
         }
         setUpTrackCommands()
         startICloudSync()
+        fillInStationDetails()
+    }
+
+    // MARK: Filling in details for older favorites
+
+    /// Favorites saved before logos and country codes were kept don't have
+    /// them. This looks those stations up in Radio Browser once and adds the
+    /// two details, leaving everything else (including any renaming) as it is.
+    /// Stations from Radio Browser are looked up by their ID; stations added by
+    /// address or imported from another app, by their stream address (many
+    /// are in Radio Browser too).
+    private func fillInStationDetails() {
+        let missing = favorites.filter { $0.countryCode == nil }
+        guard !missing.isEmpty else { return }
+        Task {
+            var found: [String: Station] = [:]   // by favorite ID
+            for station in await client.lookUp(missing.filter(\.isFromRadioBrowser).map(\.id)) {
+                found[station.id] = station
+            }
+            for station in missing where !station.isFromRadioBrowser {
+                if let match = await client.lookUp(streamAddress: station.url) { found[station.id] = match }
+            }
+            var updated = favorites
+            for index in updated.indices where updated[index].countryCode == nil {
+                guard let match = found[updated[index].id] else {
+                    // Not in Radio Browser. An empty code marks "looked up",
+                    // so it isn't tried again.
+                    if missing.contains(where: { $0.id == updated[index].id }) { updated[index].countryCode = "" }
+                    continue
+                }
+                updated[index].favicon = match.favicon
+                updated[index].countryCode = match.countryCode ?? ""
+            }
+            if updated != favorites { favorites = updated }
+        }
     }
 
     // MARK: iCloud sync
@@ -859,7 +967,7 @@ final class AppModel: ObservableObject {
         let text = favoritesFilter.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return favorites }
         return favorites.filter { station in
-            [station.name, station.country, station.formatDescription, station.tags]
+            [station.name, station.country, station.displayCountry, station.formatDescription, station.tags]
                 .contains { $0.localizedCaseInsensitiveContains(text) }
         }
     }

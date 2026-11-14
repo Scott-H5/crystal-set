@@ -17,6 +17,12 @@
 import AVFoundation
 import Combine
 import MediaPlayer
+// For the logo's picture type on each platform (NSImage, UIImage).
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 // MARK: - Player
 
@@ -51,6 +57,9 @@ final class Player: ObservableObject {
     @Published private(set) var station: Station?
     /// Show or song title sent by the stream (ICY metadata), when available.
     @Published private(set) var streamTitle = ""
+    /// The playing station's logo, for the Lock Screen and Control Center
+    /// (Now Playing information). Nil until it loads, or if there isn't one.
+    @Published private(set) var artwork: CGImage?
     // The volume setting, from 0 (silent) to 1 (full). 0.8 is 80%.
     // `didSet` passes every change straight on to the audio player.
     // On iPhone it starts at full, since the phone's volume buttons set the level.
@@ -162,6 +171,20 @@ final class Player: ObservableObject {
         hasPlayed = false
         playingSince = nil
         connect(station, quietly: false)
+        loadArtwork(for: station)
+    }
+
+    /// Fetches the station's logo (see Artwork.swift) and adds it to the Now
+    /// Playing information once it arrives. A placeholder isn't sent:
+    /// without a logo, the Lock Screen shows the app's icon instead.
+    private func loadArtwork(for station: Station) {
+        if self.station?.favicon != station.favicon || artwork == nil { artwork = nil }
+        Task { [weak self] in
+            let image = await ArtworkStore.shared.image(at: station.favicon)
+            guard let self, self.station?.id == station.id else { return }
+            self.artwork = image
+            self.updateNowPlayingInfo()
+        }
     }
 
     /// Opens a station's stream. Shared by play(_:) and automatic reconnecting.
@@ -713,6 +736,17 @@ final class Player: ObservableObject {
             MPNowPlayingInfoPropertyIsLiveStream: true,
         ]
         if !streamTitle.isEmpty { info[MPMediaItemPropertyAlbumTitle] = station.name }
+        if let artwork {
+            // Apple asks for the picture through a function, at whatever size
+            // it needs; the logo is small already, so the same one is given.
+            let size = CGSize(width: artwork.width, height: artwork.height)
+            #if os(iOS)
+            let picture = UIImage(cgImage: artwork)
+            #else
+            let picture = NSImage(cgImage: artwork, size: size)
+            #endif
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: size) { _ in picture }
+        }
         center.nowPlayingInfo = info
         #if os(macOS)
         center.playbackState = state == .playing ? .playing : .paused
@@ -797,7 +831,8 @@ enum StreamResolver {
 
     /// Downloads at most `limit` bytes, giving up after 15 seconds in all.
     /// Returns nil if it's bigger than that (so not a playlist), or fails.
-    private static func download(_ request: URLRequest, limit: Int) async -> Data? {
+    /// (Also used for station logos; see Artwork.swift.)
+    static func download(_ request: URLRequest, limit: Int) async -> Data? {
         let started = Date()
         guard let (bytes, _) = try? await URLSession.shared.bytes(for: request) else { return nil }
         // Stop the download however this function ends.

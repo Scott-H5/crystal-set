@@ -323,16 +323,16 @@ struct StationRow: View {
     // True while this row's station is the one connecting, playing or paused.
     private var isCurrent: Bool { player.station?.id == station.id && player.isActive }
 
-    // A second line such as "The United States Of America, MP3, 128 kbps".
-    private var details: String {
-        [station.country, station.formatDescription].filter { !$0.isEmpty }.joined(separator: ", ")
-    }
+    // A second line such as "United States · MP3 · 128 kbps".
+    private var details: String { station.detailLine }
 
     var body: some View {
         Button {
             if tapRenames { model.renamingStation = station } else { model.play(station) }
         } label: {
-            HStack {
+            HStack(spacing: 12) {
+                // The station's logo, or a colored tile (hidden from VoiceOver).
+                StationArtwork(station: station, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(station.name)
                         .foregroundStyle(.primary)
@@ -505,7 +505,11 @@ struct PinnedStations: View {
                 PinnedStationButton(station: station, player: player)
             }
         }
-        .padding(.vertical, 6)
+        // The buttons sit straight on the page, each its own card, instead of
+        // inside the list's white box. (Inside it, in Dark Mode, the buttons
+        // were the same color as the box and didn't look like buttons.)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
     }
 }
 
@@ -524,26 +528,31 @@ struct PinnedStationButton: View {
         Button {
             model.play(station)
         } label: {
-            HStack(spacing: 8) {
-                if isCurrent {
-                    // Hidden from VoiceOver; the button's value says it instead.
-                    Image(systemName: "speaker.wave.2.fill")
-                        .accessibilityHidden(true)
-                }
+            HStack(spacing: 10) {
+                StationArtwork(station: station, size: 40)
                 Text(station.name)
                     .font(.headline)
-                    // Long names wrap to three lines, or as many as they need
-                    // at the Accessibility text sizes.
-                    .lineLimit(textSize.isAccessibilitySize ? nil : 3)
+                    // Long names wrap to as many lines as they need. (A three-
+                    // line limit cut names off at larger text sizes.)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(.primary)
-            .padding(12)
+            .padding(10)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            // A light tile on the white list, so each button reads as its own target.
-            .background(Color(uiColor: .secondarySystemBackground),
+            // The same card color as the list below (white, or dark gray in
+            // Dark Mode), on the page's gray, so each button stands out.
+            .background(Color(uiColor: .secondarySystemGroupedBackground),
                         in: RoundedRectangle(cornerRadius: 12))
+            // The playing station gets an outline in the app's blue. (A
+            // speaker icon, as in the list, left too little room for names.)
+            .overlay {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accessibleTint, lineWidth: 2.5)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         // Several buttons share one list row; .plain keeps a tap on one from
@@ -588,6 +597,7 @@ struct MiniPlayer: View {
                 player.togglePause()
             } label: {
                 HStack(spacing: 12) {
+                    StationArtwork(station: station, size: 40)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(station.name)
                             .font(.headline)
@@ -642,64 +652,188 @@ struct MiniPlayer: View {
 
 // MARK: - Now Playing tab
 
-/// Everything about the current station, with large, plainly labeled buttons.
+/// Everything about the current station: its logo, name and show, large
+/// playback controls, and the sleep timer.
+///
+/// The controls keep the same names as always ("Pause" or "Resume", "Stop",
+/// "Reconnect", "Next Station", "Previous Station", "Sleep Timer"), so
+/// VoiceOver, Voice Control and Switch Control work as before; only the look
+/// is new. At the Accessibility text sizes the controls stack up instead of
+/// sitting side by side, and on an iPad the content keeps a comfortable width.
 struct NowPlayingScreen: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var player: Player
+    @Environment(\.dynamicTypeSize) private var textSize
 
     private var isPlaying: Bool { player.state == .playing || player.state == .connecting }
 
     var body: some View {
         NavigationStack {
-            // A Form is a standard grouped list of controls, like Settings.
-            Form {
-                Section {
-                    if let station = player.station {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(station.name)
-                                .font(.title2)
-                            Text(player.state.description)
-                                .foregroundStyle(Color.detailText)
-                            if !player.streamTitle.isEmpty {
-                                Text(player.streamTitle)
-                            }
+            ScrollView {
+                VStack(spacing: 28) {
+                    header
+                    if player.station != nil {
+                        controls
+                    }
+                    sleepTimer
+                }
+                .padding()
+                // A comfortable width on an iPad or a wide window.
+                .frame(maxWidth: 600)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Now Playing")
+        }
+    }
+
+    // The logo, then the station, show and state. VoiceOver reads the text as
+    // one item, such as "Gunsmoke. Playing. The Shadow".
+    private var header: some View {
+        VStack(spacing: 16) {
+            StationArtwork(station: player.station, size: textSize.isAccessibilitySize ? 140 : 220)
+                .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+            VStack(spacing: 6) {
+                if let station = player.station {
+                    Text(station.name)
+                        .font(.title2.bold())
+                    if !player.streamTitle.isEmpty {
+                        Text(player.streamTitle)
+                            .font(.headline)
+                    }
+                    HStack(spacing: 6) {
+                        // The level meter shows only for a station that's on.
+                        if [.playing, .connecting, .paused].contains(player.state) {
+                            LiveIndicator(active: player.state == .playing)
                         }
-                        // VoiceOver reads the name, state and show title as one item.
-                        .accessibilityElement(children: .combine)
-                    } else {
-                        Text("Nothing playing. Choose a station in Favorites or Search.")
+                        Text(player.state.description)
+                            .foregroundStyle(Color.detailText)
                     }
-                }
-
-                Section {
-                    Button(isPlaying ? "Pause" : "Resume") { player.togglePause() }
-                        .disabled(player.station == nil)
-                    Button("Stop") { player.stop() }
-                        .disabled(!player.isActive)
-                    Button("Reconnect") { player.reconnect() }
-                        .disabled(player.station == nil)
-                }
-
-                Section {
-                    Button("Next Station") { model.playAdjacent(1) }
-                    Button("Previous Station") { model.playAdjacent(-1) }
-                } footer: {
-                    Text("Steps through Favorites or Search results, whichever you used last.")
-                        .foregroundStyle(Color.detailText)
-                }
-
-                Section {
-                    SleepTimerPicker(player: player)
-                    if let sleep = player.sleepTimerDescription {
-                        Text(sleep)
-                    }
-                } footer: {
-                    Text("The sound fades out over the last 30 seconds, then playback stops.")
+                } else {
+                    Text("Nothing playing")
+                        .font(.title2.bold())
+                    Text("Choose a station in Favorites or Search.")
                         .foregroundStyle(Color.detailText)
                 }
             }
-            .navigationTitle("Now Playing")
+            .multilineTextAlignment(.center)
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    // Previous, Play/Pause and Next in a row (a column at the largest text
+    // sizes), with Stop and Reconnect below.
+    private var controls: some View {
+        let layout = textSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 16))
+                                                  : AnyLayout(HStackLayout(spacing: 36))
+        return VStack(spacing: 20) {
+            layout {
+                Button { model.playAdjacent(-1) } label: {
+                    Image(systemName: "backward.fill").font(.title)
+                        .frame(minWidth: 56, minHeight: 56)
+                }
+                .accessibilityLabel("Previous Station")
+
+                Button { player.togglePause() } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 76, height: 76)
+                        .background(Circle().fill(Color.accessibleTint))
+                }
+                .accessibilityLabel(isPlaying ? "Pause" : "Resume")
+
+                Button { model.playAdjacent(1) } label: {
+                    Image(systemName: "forward.fill").font(.title)
+                        .frame(minWidth: 56, minHeight: 56)
+                }
+                .accessibilityLabel("Next Station")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accessibleTint)
+
+            Text("Previous and Next step through Favorites or Search results, whichever you used last.")
+                .font(.footnote)
+                .foregroundStyle(Color.detailText)
+                .multilineTextAlignment(.center)
+
+            let secondary = textSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12))
+                                                         : AnyLayout(HStackLayout(spacing: 12))
+            secondary {
+                Button { player.stop() } label: {
+                    Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity)
+                }
+                .disabled(!player.isActive)
+                Button { player.reconnect() } label: {
+                    Label("Reconnect", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+        }
+    }
+
+    // Links the visible "Sleep Timer" label to its menu for VoiceOver.
+    @Namespace private var sleepTimerPair
+
+    // The sleep timer, on a card.
+    private var sleepTimer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                // `accessibilityLabeledPair` tells VoiceOver this label names the
+                // menu beside it, so the two read as one item ("Sleep Timer,
+                // Off"). Hiding the label instead made Apple's audit report
+                // visible text VoiceOver couldn't reach.
+                Label("Sleep Timer", systemImage: "moon.zzz")
+                    .accessibilityLabeledPair(role: .label, id: "sleepTimer", in: sleepTimerPair)
+                Spacer()
+                SleepTimerPicker(player: player)
+                    .accessibilityLabeledPair(role: .content, id: "sleepTimer", in: sleepTimerPair)
+            }
+            if let sleep = player.sleepTimerDescription {
+                Text(sleep)
+            }
+            Text("The sound fades out over the last 30 seconds, then playback stops.")
+                .font(.footnote)
+                .foregroundStyle(Color.detailText)
+        }
+        .padding()
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+/// Three small bars that rise and fall while a station plays, like a level
+/// meter. Still when paused, and always still with Reduce Motion on. Only for
+/// the eye: the words beside it ("Playing") say the same thing.
+struct LiveIndicator: View {
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var high = false
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<3, id: \.self) { bar in
+                Capsule()
+                    .fill(Color(red: 0.72, green: 0.42, blue: 0.20))   // the icon's copper
+                    .frame(width: 3, height: barHeight(bar))
+            }
+        }
+        .frame(height: 14, alignment: .bottom)
+        .accessibilityHidden(true)
+        .onAppear { animate() }
+        .onChange(of: active) { _, _ in animate() }
+    }
+
+    private func barHeight(_ bar: Int) -> CGFloat {
+        guard active else { return 4 }
+        let heights: [[CGFloat]] = [[6, 14], [12, 5], [8, 12]]
+        return heights[bar][high ? 1 : 0]
+    }
+
+    private func animate() {
+        guard active, !reduceMotion else { high = false; return }
+        withAnimation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true)) { high = true }
     }
 }
 

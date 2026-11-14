@@ -197,6 +197,20 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | Import favorites | Command-Shift-I |
 | Export favorites | Command-Shift-E |
 
+## Station logos and Now Playing
+
+Stations show their logo where Radio Browser has one: in lists, on pinned buttons, in the Now Playing bar and tab, and on the Lock Screen and in Control Center. Stations without a usable logo get a colored tile with a radio symbol, in one of the app icon's colors (always the same color for the same station). Logos are hidden from VoiceOver; the names say everything.
+
+Logos are downloaded once and kept on the device (`Shared/Artwork.swift`): at most 1 MB each, web addresses only, shrunk to 256 pixels. Tiny website icons (under 48 pixels) are skipped, since they'd look blurry. Favorites saved before logos existed get theirs, and their country code, looked up once in Radio Browser (by ID, or by stream address for imported stations).
+
+Country names are short: "United Kingdom · MP3 · 48 kbps".
+
+On iPhone and iPad, the Now Playing tab shows the logo large, the station and show, a small level meter while playing (still with Reduce Motion on), big Previous, Play/Pause and Next buttons, Stop and Reconnect, and the sleep timer. The controls keep their names for VoiceOver, Voice Control and Switch Control, and stack up at the largest text sizes.
+
+### Screenshots
+
+`UITests/*/ScreenshotTests.swift` capture every screen in Light and Dark Mode for a visual check (iPhone) or Light Mode (Mac). They run like the audit; see the comments at the top of each file.
+
 ## Pinned stations
 
 Pin up to ten favorites to keep them one step away:

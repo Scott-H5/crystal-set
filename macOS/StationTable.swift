@@ -171,7 +171,8 @@ struct StationTable: NSViewRepresentable {
         func text(for station: Station) -> String {
             switch self {
             case .name: return station.name
-            case .country: return station.country
+            // Short names, such as "United Kingdom" (see Station.displayCountry).
+            case .country: return station.displayCountry
             case .format: return station.formatDescription
             case .tags: return station.tags
             }
