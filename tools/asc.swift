@@ -382,7 +382,16 @@ func watch(_ args: [String]) {
     if let recipient = env["ASC_NOTIFY_IMESSAGE"], !recipient.isEmpty {
         print("Changes will also be sent by iMessage to \(recipient).")
     }
-    while keepGoing || pending {
+    // Apple can take several minutes to list a build that was just uploaded,
+    // so "nothing waiting" at the start may only mean "not listed yet". Keep
+    // watching for at least 30 minutes before stopping, so a fresh upload has
+    // time to appear. (Without this, watch stopped straight after an upload.)
+    let started = Date()
+    let graceSeconds: TimeInterval = 30 * 60
+    if !pending && !keepGoing {
+        print("Nothing is waiting yet; watching for 30 minutes in case a new upload appears.")
+    }
+    while keepGoing || pending || Date().timeIntervalSince(started) < graceSeconds {
         Thread.sleep(forTimeInterval: minutes * 60)
         let now = snapshot()
         for (build, state) in now.states.sorted(by: { $0.key < $1.key }) where last[build] != state {
