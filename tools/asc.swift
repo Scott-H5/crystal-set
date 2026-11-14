@@ -15,10 +15,15 @@
 //   ./asc.sh link on [LIMIT]             turn the public link on (LIMIT testers)
 //   ./asc.sh link off
 //   ./asc.sh watch [MINUTES] [--keep]    check builds every MINUTES (default 5)
-//                                        and tell you when one changes: a Mac
+//                                        and tell you when one changes, or new
+//                                        tester feedback arrives: a Mac
 //                                        notification, and an iMessage if
 //                                        ASC_NOTIFY_IMESSAGE is set. Stops when
 //                                        nothing is waiting, unless --keep.
+//   ./asc.sh feedback [COUNT]            the newest tester feedback and crashes
+//                                        (10 unless COUNT), as plain text;
+//                                        screenshots and crash logs are saved
+//                                        in build/feedback.
 //   ./asc.sh submit ios|mac [BUILD]      newest build (or BUILD): add What to Test notes
 //                                        (testflight-notes.txt), add it to the
 //                                        Testers group, send it to Beta App
@@ -92,6 +97,23 @@ typealias JSON = [String: Any]
 /// Stops with Apple's own error message if the request fails.
 @discardableResult
 func api(_ method: String, _ path: String, _ body: JSON? = nil) -> JSON {
+    switch send(method, path, body) {
+    case .success(let json): return json
+    case .failure(let message): fail(message)
+    }
+}
+
+/// Like `api`, but nil instead of stopping when the request fails. For
+/// `watch`, which should keep going through a network hiccup.
+func apiIfPossible(_ path: String) -> JSON? {
+    if case .success(let json) = send("GET", path, nil) { return json }
+    return nil
+}
+
+enum Reply { case success(JSON), failure(String) }
+
+/// Sends one request and returns the reply's JSON, or why it failed.
+func send(_ method: String, _ path: String, _ body: JSON?) -> Reply {
     var request = URLRequest(url: URL(string: "https://api.appstoreconnect.apple.com" + path)!)
     request.httpMethod = method
     request.setValue("Bearer \(makeToken())", forHTTPHeaderField: "Authorization")
@@ -105,7 +127,7 @@ func api(_ method: String, _ path: String, _ body: JSON? = nil) -> JSON {
     URLSession.shared.dataTask(with: request) { result = ($0, $1, $2); done.signal() }.resume()
     done.wait()
 
-    if let error = result.2 { fail("Couldn't reach App Store Connect: \(error.localizedDescription)") }
+    if let error = result.2 { return .failure("Couldn't reach App Store Connect: \(error.localizedDescription)") }
     let status = (result.1 as? HTTPURLResponse)?.statusCode ?? 0
     let json = result.0.flatMap { try? JSONSerialization.jsonObject(with: $0) as? JSON } ?? [:]
     guard (200..<300).contains(status) else {
@@ -113,9 +135,9 @@ func api(_ method: String, _ path: String, _ body: JSON? = nil) -> JSON {
         let errors = (json["errors"] as? [JSON] ?? []).map {
             "\($0["title"] ?? "Error"): \($0["detail"] ?? "")"
         }
-        fail("App Store Connect said no (HTTP \(status)).\n" + (errors.isEmpty ? "" : errors.joined(separator: "\n")))
+        return .failure("App Store Connect said no (HTTP \(status)).\n" + (errors.isEmpty ? "" : errors.joined(separator: "\n")))
     }
-    return json
+    return .success(json)
 }
 
 func attributes(_ item: JSON) -> JSON { item["attributes"] as? JSON ?? [:] }
@@ -312,6 +334,123 @@ func submit(_ which: String) {
     print("Sent \(name) build \(build.number) to Beta App Review. Apple emails you the result.")
 }
 
+// MARK: - Tester feedback
+
+/// One piece of feedback from the TestFlight app: a comment with screenshots
+/// (Send Beta Feedback), or a crash the tester chose to share.
+struct Feedback {
+    let id: String
+    let isCrash: Bool
+    let date: Date
+    let comment: String
+    let tester: String      // "MaryEllen Howell (maryehowell@icloud.com)"
+    let testerName: String  // "MaryEllen Howell", for messages (no address)
+    let build: String       // "202611140835"
+    let device: String      // "iPhone17,1, iOS 27.2"
+    let screenshots: [URL]  // Apple's links expire after a while, so they're saved
+}
+
+/// The newest feedback of one kind ("Screenshot" or "Crash"), newest first.
+/// Nil if App Store Connect couldn't be asked.
+func feedbackList(_ kind: String, limit: Int) -> [Feedback]? {
+    // `include` asks for the tester and the build in the same reply; they
+    // come back in a separate "included" list, matched by type and ID.
+    guard let reply = apiIfPossible("/v1/apps/\(appID)/betaFeedback\(kind)Submissions"
+                                    + "?limit=\(limit)&sort=-createdDate&include=tester,build"
+                                    + "&fields[betaTesters]=firstName,lastName,email&fields[builds]=version")
+    else { return nil }
+    var included: [String: JSON] = [:]
+    for item in reply["included"] as? [JSON] ?? [] {
+        included["\(item["type"] ?? "")/\(item["id"] ?? "")"] = attributes(item)
+    }
+    func related(_ item: JSON, _ name: String) -> JSON {
+        guard let link = ((item["relationships"] as? JSON)?[name] as? JSON)?["data"] as? JSON else { return [:] }
+        return included["\(link["type"] ?? "")/\(link["id"] ?? "")"] ?? [:]
+    }
+    let dates = ISO8601DateFormatter()
+    dates.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return (reply["data"] as? [JSON] ?? []).map { item in
+        let a = attributes(item)
+        let t = related(item, "tester")
+        let name = [t["firstName"], t["lastName"]].compactMap { $0 as? String }.filter { !$0.isEmpty }.joined(separator: " ")
+        let email = (t["email"] as? String) ?? (a["email"] as? String) ?? ""
+        let created = (a["createdDate"] as? String) ?? ""
+        let device = [a["deviceModel"], a["osVersion"].map { "\(a["devicePlatform"] as? String == "MAC_OS" ? "macOS" : "iOS") \($0)" }]
+            .compactMap { $0 as? String }.joined(separator: ", ")
+        return Feedback(
+            id: item["id"] as? String ?? "",
+            isCrash: kind == "Crash",
+            date: dates.date(from: created) ?? ISO8601DateFormatter().date(from: created) ?? .distantPast,
+            comment: (a["comment"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            tester: name.isEmpty ? (email.isEmpty ? "a tester" : email) : (email.isEmpty ? name : "\(name) (\(email))"),
+            testerName: name.isEmpty ? "a tester" : name,
+            build: related(item, "build")["version"] as? String ?? "?",
+            device: device,
+            screenshots: (a["screenshots"] as? [JSON] ?? []).compactMap { ($0["url"] as? String).flatMap(URL.init) })
+    }
+}
+
+/// Both kinds together, newest first.
+func allFeedback(limit: Int) -> [Feedback]? {
+    guard let notes = feedbackList("Screenshot", limit: limit),
+          let crashes = feedbackList("Crash", limit: limit) else { return nil }
+    return Array((notes + crashes).sorted { $0.date > $1.date }.prefix(limit))
+}
+
+/// Downloads a file to `path`. Feedback screenshot links need no token:
+/// they carry their own short-lived permission.
+func download(_ url: URL, to path: String) -> Bool {
+    var data: Data?
+    let done = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: url) { got, response, _ in
+        if (response as? HTTPURLResponse)?.statusCode == 200 { data = got }
+        done.signal()
+    }.resume()
+    done.wait()
+    guard let data else { return false }
+    return FileManager.default.createFile(atPath: path, contents: data)
+}
+
+/// `./asc.sh feedback [COUNT]`: the newest feedback (10 unless COUNT), as
+/// plain text. Screenshots and crash logs are saved in build/feedback,
+/// named by date, so they can be opened (or described) later.
+func showFeedback(_ args: [String]) {
+    let count = args.compactMap(Int.init).first ?? 10
+    guard let list = allFeedback(limit: count) else {
+        fail("Couldn't get feedback from App Store Connect. Try again in a moment.")
+    }
+    if list.isEmpty { print("No feedback yet."); return }
+    let folder = FileManager.default.currentDirectoryPath + "/build/feedback"
+    try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+    // File names like 2026-11-14-0912, so a folder listing sorts by date.
+    let stamp = DateFormatter()
+    stamp.dateFormat = "yyyy-MM-dd-HHmm"
+    for item in list {
+        let when = DateFormatter.localizedString(from: item.date, dateStyle: .medium, timeStyle: .short)
+        print("\(when), \(item.isCrash ? "crash" : "feedback") from \(item.tester)")
+        print("  Build \(item.build)\(item.device.isEmpty ? "" : " on \(item.device)")")
+        print(item.comment.isEmpty ? "  (No comment.)"
+              : item.comment.split(separator: "\n", omittingEmptySubsequences: false).map { "  > \($0)" }.joined(separator: "\n"))
+        let base = "\(folder)/\(stamp.string(from: item.date))"
+        for (n, url) in item.screenshots.enumerated() {
+            let path = "\(base)-screenshot-\(n + 1).\(url.pathExtension.isEmpty ? "png" : url.pathExtension)"
+            if FileManager.default.fileExists(atPath: path) || download(url, to: path) {
+                print("  Screenshot: \(path)")
+            }
+        }
+        if item.isCrash {
+            let path = "\(base)-crash.txt"
+            if !FileManager.default.fileExists(atPath: path),
+               let log = apiIfPossible("/v1/betaFeedbackCrashSubmissions/\(item.id)/crashLog"),
+               let text = attributes(log["data"] as? JSON ?? [:])["logText"] as? String {
+                FileManager.default.createFile(atPath: path, contents: Data(text.utf8))
+            }
+            if FileManager.default.fileExists(atPath: path) { print("  Crash log: \(path)") }
+        }
+        print("")
+    }
+}
+
 // MARK: - Watching for changes
 
 /// States meaning "Apple still has work to do on this build".
@@ -386,6 +525,11 @@ func watch(_ args: [String]) {
     // so "nothing waiting" at the start may only mean "not listed yet". Keep
     // watching for at least 30 minutes before stopping, so a fresh upload has
     // time to appear. (Without this, watch stopped straight after an upload.)
+    // Feedback already there when watching starts isn't news; only what
+    // arrives later is reported. (Nil means it couldn't be checked; then the
+    // first successful check just records what's there.)
+    var seenFeedback = allFeedback(limit: 20).map { Set($0.map(\.id)) }
+    print("New tester feedback and crashes will be reported too.")
     let started = Date()
     let graceSeconds: TimeInterval = 30 * 60
     if !pending && !keepGoing {
@@ -401,6 +545,17 @@ func watch(_ args: [String]) {
         }
         last = now.states
         pending = now.pending
+        if let feedback = allFeedback(limit: 20) {
+            if let seen = seenFeedback {
+                for item in feedback.reversed() where !seen.contains(item.id) {
+                    // Names only, never addresses, in notifications and texts.
+                    let what = item.isCrash ? "Crash report" : "Feedback"
+                    let comment = item.comment.isEmpty ? "" : ": \(item.comment.prefix(150))\(item.comment.count > 150 ? "…" : "")"
+                    notify("\(what) from \(item.testerName), build \(item.build)\(comment) (./asc.sh feedback for all of it)")
+                }
+            }
+            seenFeedback = (seenFeedback ?? []).union(feedback.map(\.id))
+        }
     }
     notify("Nothing left waiting on Apple.")
 }
@@ -420,6 +575,7 @@ case "remove-tester":
 case "link": link(Array(args.dropFirst()))
 case "submit": submit(args.count > 1 ? args[1] : "")
 case "watch": watch(Array(args.dropFirst()))
+case "feedback": showFeedback(Array(args.dropFirst()))
 default:
     print("""
     Usage:
@@ -430,5 +586,6 @@ default:
       ./asc.sh link            (or: link on [LIMIT], link off)
       ./asc.sh submit ios|mac [BUILD]
       ./asc.sh watch [MINUTES] [--keep]
+      ./asc.sh feedback [COUNT]
     """)
 }
