@@ -52,6 +52,12 @@ struct Station: Codable, Identifiable, Hashable {
     var codec: String
     /// The stream's quality in kilobits per second (0 when unknown).
     var bitrate: Int
+    /// True for a favorite pinned to the top (at most ten; see "Pinned
+    /// stations" in AppModel). Optional, so favorites saved before pinning
+    /// existed (with no "pinned" in their JSON) still load; nil means not
+    /// pinned. It's part of the favorites list, so pins sync through iCloud
+    /// with everything else.
+    var pinned: Bool? = nil
 
     /// Radio Browser stations use its station UUID as their ID. Stations added
     /// by hand or imported from a file get a prefixed ID instead.
@@ -326,6 +332,10 @@ final class AppModel: ObservableObject {
     // Set to true to move keyboard focus (and so VoiceOver) onto the
     // Favorites table (Mac, Command-1). The table sets it back to false.
     @Published var focusFavoritesTable = false
+    /// Text typed in the Favorites filter field. When it isn't empty, the
+    /// Favorites list shows only stations whose name, country, format or
+    /// tags contain it (see filteredFavorites).
+    @Published var favoritesFilter = ""
     /// True while a text field has focus, so arrow-key menu shortcuts
     /// (Command-Left/Right/Up/Down) go to the text field instead.
     @Published var isEditingText = false
@@ -793,6 +803,73 @@ final class AppModel: ObservableObject {
         announce("Removed \(station.name) from favorites")
     }
 
+    // MARK: Pinned stations
+
+    // Up to ten favorites can be pinned. They're shown as large buttons
+    // above the Favorites list on iPhone and iPad, and above the table on
+    // the Mac, where Command-Option-1 to 9, and 0 for the tenth, play them
+    // (the order of the number keys). A pinned station stays
+    // in the list too; pinning only adds the shortcut.
+    //
+    // The pins' order is their order in Favorites, so moving a favorite up
+    // or down moves its pin too. There's no separate order to keep in step.
+
+    /// The most stations that can be pinned: one per number key on the Mac.
+    static let maxPinned = 10
+
+    /// The pinned favorites, in Favorites order.
+    var pinnedStations: [Station] { favorites.filter { $0.pinned == true } }
+
+    func isPinned(_ station: Station) -> Bool {
+        favorites.first { $0.id == station.id }?.pinned == true
+    }
+
+    /// Pins a favorite, or unpins it if it's pinned. With ten already
+    /// pinned, says so and pins nothing.
+    func togglePin(_ station: Station) {
+        guard let index = favorites.firstIndex(where: { $0.id == station.id }) else { return }
+        if favorites[index].pinned == true {
+            favorites[index].pinned = nil
+            announce("Unpinned \(station.name)")
+        } else {
+            guard pinnedStations.count < Self.maxPinned else {
+                announce("\(Self.maxPinned) stations are already pinned. Unpin one first.")
+                return
+            }
+            favorites[index].pinned = true
+            let position = (pinnedStations.firstIndex { $0.id == station.id } ?? 0) + 1
+            announce("Pinned \(station.name), \(position) of \(pinnedStations.count)")
+        }
+    }
+
+    /// Plays pinned station `number` (1 to 10). Command-Option-1 to 0 on the Mac.
+    func playPinned(_ number: Int) {
+        let pinned = pinnedStations
+        guard pinned.indices.contains(number - 1) else {
+            announce(pinned.isEmpty ? "No pinned stations" : "Only \(pinned.count) pinned")
+            return
+        }
+        play(pinned[number - 1])
+    }
+
+    // MARK: Filtering favorites
+
+    /// Favorites matching the filter text (all of them when it's empty).
+    var filteredFavorites: [Station] {
+        let text = favoritesFilter.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return favorites }
+        return favorites.filter { station in
+            [station.name, station.country, station.formatDescription, station.tags]
+                .contains { $0.localizedCaseInsensitiveContains(text) }
+        }
+    }
+
+    /// True while the filter is in use. Moving favorites is turned off then,
+    /// since "up one place" in a filtered list isn't one place in the real one.
+    var isFilteringFavorites: Bool {
+        !favoritesFilter.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     // Command-D: adds the selected station, or removes it if it's already a favorite.
     func toggleFavoriteForSelection() {
         guard let station = selectedStation else { return }
@@ -801,6 +878,10 @@ final class AppModel: ObservableObject {
 
     /// Moves the selected favorite up (-1) or down (+1) one place.
     func moveSelectedFavorite(by offset: Int) {
+        guard !isFilteringFavorites else {
+            announce("Clear the filter to move favorites")
+            return
+        }
         guard let id = favoriteSelection,
               let i = favorites.firstIndex(where: { $0.id == id }) else { return }
         let j = i + offset

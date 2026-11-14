@@ -173,6 +173,11 @@ extension AppModel {
             guard !knownIDs.contains(station.id), !knownURLs.contains(key) else { continue }
             knownIDs.insert(station.id)
             knownURLs.insert(key)
+            // Imported stations arrive unpinned. A file exported from another
+            // device may have its own pins, which could take this list past
+            // the five-pin limit.
+            var station = station
+            station.pinned = nil
             added.append(station)
         }
         // Add them all at once, so favorites are saved once rather than per station.

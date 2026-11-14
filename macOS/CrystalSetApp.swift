@@ -103,6 +103,20 @@ struct StationCommands: Commands {
 
             Divider()
 
+            // Play pinned station 1 to 10: Command-Option-1 to 9, then 0 for
+            // the tenth (the number keys' order), from anywhere in the app. Each item is named after its station, so
+            // the menu doubles as a list of what's pinned. Dimmed when that
+            // many stations aren't pinned.
+            ForEach(1...AppModel.maxPinned, id: \.self) { number in
+                let pinned = model.pinnedStations
+                let name = pinned.indices.contains(number - 1) ? pinned[number - 1].name : "Pinned Station \(number)"
+                Button("Play \(name)") { model.playPinned(number) }
+                    .keyboardShortcut(KeyEquivalent(Character("\(number % 10)")), modifiers: [.command, .option])
+                    .disabled(!pinned.indices.contains(number - 1))
+            }
+
+            Divider()
+
             // 0.05 is a 5% step. Change both numbers to change the step.
             Button("Volume Up") { model.changeVolume(by: 0.05) }
                 .keyboardShortcut(.upArrow, modifiers: .command)
@@ -144,6 +158,11 @@ struct StationCommands: Commands {
             Button("Move Favorite Down") { model.moveSelectedFavorite(by: 1) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
                 .disabled(arrowKeysBelongToText || model.tab != .favorites || model.favoriteSelection == nil)
+            Button(model.selectedStation.map(model.isPinned) == true ? "Unpin" : "Pin to Top") {
+                if let station = model.selectedStation { model.togglePin(station) }
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .disabled(model.tab != .favorites || model.favoriteSelection == nil)
             Button("Rename Favorite…") {
                 model.renamingStation = model.favorites.first { $0.id == model.favoriteSelection }
             }

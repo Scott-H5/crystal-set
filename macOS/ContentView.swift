@@ -85,6 +85,8 @@ struct ContentView: View {
 /// The Favorites tab: the favorites table and the buttons below it.
 struct FavoritesView: View {
     @EnvironmentObject private var model: AppModel
+    // Whether the Filter field has the cursor (see .onChange below).
+    @FocusState private var filterFocused: Bool
 
     // The selected favorite, or nil. Buttons use it to know what to act on.
     private var selected: Station? {
@@ -102,8 +104,22 @@ struct FavoritesView: View {
                     .multilineTextAlignment(.center)
                 Spacer()
             } else {
+                // The pinned stations, as numbered buttons. Command-Option-1
+                // to 0 play them from anywhere (Controls menu).
+                if !model.pinnedStations.isEmpty {
+                    PinnedRow(player: model.player)
+                }
+                // Typing here narrows the table to matching stations.
+                TextField("Filter favorites", text: $model.favoritesFilter,
+                          prompt: Text("Filter by name, country, format or tag"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($filterFocused)
+                if model.isFilteringFavorites && model.filteredFavorites.isEmpty {
+                    Text("No favorites match \u{201C}\(model.favoritesFilter)\u{201D}.")
+                        .foregroundStyle(Color.detailText)
+                }
                 // `allowsDelete: true` turns on Command-Delete for this table only.
-                StationTable(stations: model.favorites,
+                StationTable(stations: model.filteredFavorites,
                              selection: $model.favoriteSelection,
                              title: "Favorites",
                              allowsDelete: true,
@@ -121,12 +137,20 @@ struct FavoritesView: View {
                     .disabled(selected == nil)
                 Button("Rename…") { model.renamingStation = selected }
                     .disabled(selected == nil)
-                // Dimmed for the first favorite, which can't move up.
+                Button(selected.map(model.isPinned) == true ? "Unpin" : "Pin to Top") {
+                    if let selected { model.togglePin(selected) }
+                }
+                .disabled(selected == nil)
+                // Dimmed for the first favorite, which can't move up, and
+                // while filtering (a place in the filtered list isn't a place
+                // in the real one).
                 Button("Move Up") { model.moveSelectedFavorite(by: -1) }
-                    .disabled(selected == nil || model.favorites.first?.id == selected?.id)
+                    .disabled(selected == nil || model.isFilteringFavorites
+                              || model.favorites.first?.id == selected?.id)
                 // Dimmed for the last favorite, which can't move down.
                 Button("Move Down") { model.moveSelectedFavorite(by: 1) }
-                    .disabled(selected == nil || model.favorites.last?.id == selected?.id)
+                    .disabled(selected == nil || model.isFilteringFavorites
+                              || model.favorites.last?.id == selected?.id)
                 // Pushes the next buttons to the right-hand side.
                 Spacer()
                 // Goes to the Search tab, where you paste the address.
@@ -137,6 +161,45 @@ struct FavoritesView: View {
             }
         }
         .padding()
+        // While the Filter field has the cursor, the Command-arrow menu
+        // shortcuts step aside so the arrows move the text cursor.
+        .onChange(of: filterFocused) { focused in
+            model.isEditingText = focused
+        }
+    }
+}
+
+/// The pinned stations as a row of numbered buttons above the Favorites
+/// table: "1. Gunsmoke", "2. …". Clicking one (or VO-Space) plays it, and
+/// Command-Option and its number play it from anywhere in the app.
+struct PinnedRow: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var player: Player
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // A heading, so VoiceOver's Headings rotor (or VO-Command-H)
+            // jumps here.
+            Text("Pinned")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(Array(model.pinnedStations.enumerated()), id: \.element.id) { index, station in
+                let isCurrent = player.station?.id == station.id && player.isActive
+                Button { model.play(station) } label: {
+                    Text("\(index + 1). \(station.name)")
+                        .lineLimit(1)
+                        .fontWeight(isCurrent ? .bold : .regular)
+                }
+                // Hovering shows the full name and the shortcut.
+                .help("\(station.name) (Command-Option-\((index + 1) % 10))")
+                .accessibilityValue(isCurrent ? player.state.description : "")
+                .contextMenu {
+                    Button("Play") { model.play(station) }
+                    Button("Unpin") { model.togglePin(station) }
+                }
+            }
+            Spacer(minLength: 0)
+        }
     }
 }
 

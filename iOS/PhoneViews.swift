@@ -122,18 +122,50 @@ struct FavoritesScreen: View {
                         description: Text("Use the Search tab to find stations by name or tag, or paste a stream address there. You can also import a JSON favorites file from the More menu.")
                     )
                 } else {
+                    // The stations to list: all favorites, or only those
+                    // matching the Filter field.
+                    let stations = model.filteredFavorites
                     List {
-                        ForEach(model.favorites) { station in
-                            StationRow(station: station, player: model.player, inFavorites: true)
+                        // The pinned stations, as large buttons above the list.
+                        // Hidden while filtering (the filter is for finding
+                        // something else) and in Edit mode (for tidying the list).
+                        // The section's "Pinned" header is a heading, so
+                        // VoiceOver's Headings rotor jumps straight to it.
+                        if showsPinned {
+                            Section("Pinned") {
+                                PinnedStations(player: model.player)
+                            }
                         }
-                        // In Edit mode, drag handles reorder and delete buttons remove.
-                        .onMove { from, to in model.favorites.move(fromOffsets: from, toOffset: to) }
-                        // The delete buttons are attached only in Edit mode (nil
-                        // means none). Otherwise iOS also adds its own swipe-to-
-                        // delete, which put a second Delete in VoiceOver's Actions
-                        // rotor beside the row's own Remove swipe action.
-                        .onDelete(perform: editMode.isEditing ? deleteFavorites : nil)
+                        Section(showsPinned ? "All Favorites" : "") {
+                            ForEach(stations) { station in
+                                StationRow(station: station, player: model.player, inFavorites: true)
+                            }
+                            // In Edit mode, drag handles reorder and delete buttons
+                            // remove. Moving is off while filtering, since a place
+                            // in the filtered list isn't a place in the real one.
+                            .onMove(perform: model.isFilteringFavorites ? nil : { from, to in
+                                model.favorites.move(fromOffsets: from, toOffset: to)
+                            })
+                            // The delete buttons are attached only in Edit mode (nil
+                            // means none). Otherwise iOS also adds its own swipe-to-
+                            // delete, which put a second Delete in VoiceOver's Actions
+                            // rotor beside the row's own Remove swipe action.
+                            .onDelete(perform: editMode.isEditing ? { offsets in
+                                for station in offsets.map({ stations[$0] }) {
+                                    model.removeFromFavorites(station)
+                                }
+                            } : nil)
+                        }
+                        if stations.isEmpty {
+                            Text("No favorites match \u{201C}\(model.favoritesFilter)\u{201D}.")
+                                .foregroundStyle(Color.detailText)
+                        }
                     }
+                    // The Filter field, always shown at the top of the list
+                    // (not hidden until you pull down, so VoiceOver finds it).
+                    .searchable(text: $model.favoritesFilter,
+                                placement: .navigationBarDrawer(displayMode: .always),
+                                prompt: "Filter favorites")
                 }
             }
             .navigationTitle("Favorites")
@@ -200,11 +232,9 @@ struct FavoritesScreen: View {
         }
     }
 
-    // Removes the favorites at these positions (Edit mode's delete buttons).
-    private func deleteFavorites(at offsets: IndexSet) {
-        for station in offsets.map({ model.favorites[$0] }) {
-            model.removeFromFavorites(station)
-        }
+    // Whether to show the Pinned section.
+    private var showsPinned: Bool {
+        !model.pinnedStations.isEmpty && !model.isFilteringFavorites && !editMode.isEditing
     }
 }
 
@@ -335,9 +365,7 @@ struct StationRow: View {
         //   - Favorites in Edit mode (tidying up): Move Up, Move Down, Delete.
         //     Double-tap renames. Move Up is left off the first favorite and
         //     Move Down off the last, since they can't go any further.
-        //   - Otherwise (listening): the swipe action a sighted person gets
-        //     (Remove on a favorite, Add to Favorites on a search result),
-        //     then Stop and Sleep Timer… on the station that's playing.
+        //   - Otherwise (listening): see ListeningActions, below.
         .accessibilityActions {
             if tapRenames {
                 if model.favorites.first?.id != station.id {
@@ -347,15 +375,12 @@ struct StationRow: View {
                     Button("Move Down") { move(by: 1) }
                 }
                 Button("Delete") { model.removeFromFavorites(station) }
-            } else {
-                // Stands in for the swipe action (see `.swipeActions` below).
-                Button(swipeTitle) { swipeAction() }
-                if isCurrent {
-                    Button("Stop") { player.stop() }
-                    Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
-                }
             }
         }
+        // Remove (or Add to Favorites), Pin to Top or Unpin, then Stop and
+        // Sleep Timer… on the station that's playing. Shared with the pinned
+        // buttons, so the Actions rotor is the same wherever a station shows.
+        .modifier(ListeningActions(station: station, player: player, active: !tapRenames))
         // Touch and hold.
         .contextMenu {
             Button("Play", systemImage: "play") { model.play(station) }
@@ -366,6 +391,10 @@ struct StationRow: View {
                 Button("Stop", systemImage: "stop") { player.stop() }
             }
             if inFavorites {
+                Button(model.isPinned(station) ? "Unpin" : "Pin to Top",
+                       systemImage: model.isPinned(station) ? "pin.slash" : "pin") {
+                    model.togglePin(station)
+                }
                 Button("Rename…", systemImage: "pencil") { model.renamingStation = station }
             }
         }
@@ -417,6 +446,120 @@ struct StationRow: View {
     private func move(by offset: Int) {
         model.favoriteSelection = station.id
         model.moveSelectedFavorite(by: offset)
+    }
+}
+
+// MARK: - Shared Actions rotor
+
+/// The Actions rotor (VoiceOver: swipe up or down) for a station while
+/// listening, shared by list rows and pinned buttons so it's the same
+/// wherever a station appears:
+///   - Remove (a favorite) or Add to Favorites (a search result), standing in
+///     for the swipe action a sighted person gets.
+///   - Pin to Top or Unpin, for favorites.
+///   - Stop and Sleep Timer…, on the station that's playing.
+/// `active` is false in Edit mode, where a row offers Move Up, Move Down and
+/// Delete instead.
+struct ListeningActions: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+    let station: Station
+    @ObservedObject var player: Player
+    var active = true
+
+    private var isCurrent: Bool { player.station?.id == station.id && player.isActive }
+
+    func body(content: Content) -> some View {
+        content.accessibilityActions {
+            if active {
+                if model.isFavorite(station) {
+                    Button("Remove") { model.removeFromFavorites(station) }
+                    Button(model.isPinned(station) ? "Unpin" : "Pin to Top") { model.togglePin(station) }
+                } else {
+                    Button("Add to Favorites") { model.addToFavorites(station) }
+                }
+                if isCurrent {
+                    Button("Stop") { player.stop() }
+                    Button("Sleep Timer…") { model.showingSleepTimerChoices = true }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Pinned stations
+
+/// Up to ten pinned favorites as large buttons, in a grid that fits the
+/// screen: two across on an iPhone, more on an iPad or in landscape, and one
+/// full-width button per row at the largest text sizes.
+struct PinnedStations: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var player: Player
+    @Environment(\.dynamicTypeSize) private var textSize
+
+    var body: some View {
+        // `.adaptive` fits as many columns as there's room for, each at least
+        // this wide. At the Accessibility text sizes, a button per row.
+        let minimum: CGFloat = textSize.isAccessibilitySize ? 600 : 150
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: 10)], spacing: 10) {
+            ForEach(model.pinnedStations) { station in
+                PinnedStationButton(station: station, player: player)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+/// One pinned station: double-tap (or tap) plays it. VoiceOver reads its name,
+/// "Playing" when it's the one on, and offers the same Actions rotor as the
+/// station's row in the list.
+struct PinnedStationButton: View {
+    @EnvironmentObject private var model: AppModel
+    let station: Station
+    @ObservedObject var player: Player
+    @Environment(\.dynamicTypeSize) private var textSize
+
+    private var isCurrent: Bool { player.station?.id == station.id && player.isActive }
+
+    var body: some View {
+        Button {
+            model.play(station)
+        } label: {
+            HStack(spacing: 8) {
+                if isCurrent {
+                    // Hidden from VoiceOver; the button's value says it instead.
+                    Image(systemName: "speaker.wave.2.fill")
+                        .accessibilityHidden(true)
+                }
+                Text(station.name)
+                    .font(.headline)
+                    // Long names wrap to three lines, or as many as they need
+                    // at the Accessibility text sizes.
+                    .lineLimit(textSize.isAccessibilitySize ? nil : 3)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            // A light tile on the white list, so each button reads as its own target.
+            .background(Color(uiColor: .secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        // Several buttons share one list row; .plain keeps a tap on one from
+        // pressing them all.
+        .buttonStyle(.plain)
+        .accessibilityValue(isCurrent ? player.state.description : "")
+        .accessibilityHint("Plays this station")
+        .modifier(ListeningActions(station: station, player: player))
+        .contextMenu {
+            Button("Play", systemImage: "play") { model.play(station) }
+            Button("Unpin", systemImage: "pin.slash") { model.togglePin(station) }
+            Button("Remove from Favorites", systemImage: "star.slash") { model.removeFromFavorites(station) }
+            if isCurrent {
+                Button("Stop", systemImage: "stop") { player.stop() }
+            }
+        }
     }
 }
 

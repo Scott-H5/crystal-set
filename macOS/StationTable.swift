@@ -303,7 +303,7 @@ struct StationTable: NSViewRepresentable {
         // True if the favorite in this row can move by `offset` (-1 up,
         // +1 down): not the first one up, or the last one down.
         func canMoveFavorite(row: Int, by offset: Int) -> Bool {
-            guard parent?.allowsDelete == true, let model else { return false }
+            guard parent?.allowsDelete == true, let model, !model.isFilteringFavorites else { return false }
             return model.favorites.indices.contains(row + offset)
         }
 
@@ -316,6 +316,18 @@ struct StationTable: NSViewRepresentable {
                   let station = station(at: row), let model else { return }
             model.favoriteSelection = station.id
             model.moveSelectedFavorite(by: offset)
+        }
+
+        /// "Pin to Top" or "Unpin" for a favorite, or nil in Search results
+        /// (pins are for favorites).
+        func pinActionTitle(row: Int) -> String? {
+            guard parent?.allowsDelete == true, let station = station(at: row), let model else { return nil }
+            return model.isPinned(station) ? "Unpin" : "Pin to Top"
+        }
+
+        func togglePin(row: Int) {
+            guard let station = station(at: row) else { return }
+            model?.togglePin(station)
         }
 
         func favoriteActionTitle(row: Int) -> String {
@@ -407,7 +419,8 @@ struct StationTable: NSViewRepresentable {
 
         private func configure(_ cell: StationNameCellView, for station: Station) {
             let starred = parent?.showsFavoriteStars == true && model?.isFavorite(station) == true
-            cell.configure(name: station.name, mark: playMark(for: station), isFavorite: starred)
+            let pinned = parent?.allowsDelete == true && station.pinned == true
+            cell.configure(name: station.name, mark: playMark(for: station), isFavorite: starred, isPinned: pinned)
         }
 
         /// Brings the Name cells on screen up to date, without reloading the
@@ -474,6 +487,13 @@ struct StationTable: NSViewRepresentable {
                 rename.tag = row
                 menu.addItem(rename)
 
+                if let title = pinActionTitle(row: row) {
+                    let pin = NSMenuItem(title: title, action: #selector(menuTogglePin(_:)), keyEquivalent: "")
+                    pin.target = self
+                    pin.tag = row
+                    menu.addItem(pin)
+                }
+
                 // Move Up and Move Down, the same as VoiceOver's actions:
                 // left off the first favorite (up) and the last (down).
                 if canMoveFavorite(row: row, by: -1) {
@@ -491,6 +511,7 @@ struct StationTable: NSViewRepresentable {
             }
         }
 
+        @objc private func menuTogglePin(_ sender: NSMenuItem) { togglePin(row: sender.tag) }
         @objc private func menuMoveUp(_ sender: NSMenuItem) { moveFavorite(row: sender.tag, by: -1) }
         @objc private func menuMoveDown(_ sender: NSMenuItem) { moveFavorite(row: sender.tag, by: 1) }
         @objc private func menuPlay(_ sender: NSMenuItem) { play(row: sender.tag) }
@@ -624,6 +645,12 @@ final class StationRowView: NSTableRowView {
                 return true
             },
         ]
+        if let title = coordinator.pinActionTitle(row: row) {
+            actions.append(NSAccessibilityCustomAction(name: title) { [weak coordinator] in
+                coordinator?.togglePin(row: row)
+                return true
+            })
+        }
         if coordinator.canMoveFavorite(row: row, by: -1) {
             actions.append(NSAccessibilityCustomAction(name: "Move Up") { [weak coordinator] in
                 coordinator?.moveFavorite(row: row, by: -1)
@@ -675,7 +702,7 @@ final class StationNameCellView: NSTableCellView {
     private let star = DecorativeImageView()
     // What the cell shows now, so configure can skip work when nothing changed.
     // (Setting the same text again could make VoiceOver re-read the row.)
-    private var shown: (name: String, mark: PlayMark?, isFavorite: Bool)?
+    private var shown: (name: String, mark: PlayMark?, isFavorite: Bool, isPinned: Bool)?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -746,9 +773,10 @@ final class StationNameCellView: NSTableCellView {
         textField.map { [$0] }
     }
 
-    func configure(name: String, mark: PlayMark?, isFavorite: Bool) {
-        if let shown, shown.name == name, shown.mark == mark, shown.isFavorite == isFavorite { return }
-        shown = (name, mark, isFavorite)
+    func configure(name: String, mark: PlayMark?, isFavorite: Bool, isPinned: Bool = false) {
+        if let shown, shown.name == name, shown.mark == mark, shown.isFavorite == isFavorite,
+           shown.isPinned == isPinned { return }
+        shown = (name, mark, isFavorite, isPinned)
 
         speaker.isHidden = mark == nil
         if let mark {
@@ -767,6 +795,8 @@ final class StationNameCellView: NSTableCellView {
         // What VoiceOver reads: the name, then what the icons show.
         var spoken = [name]
         if isFavorite { spoken.append("favorite") }
+        // Pinned favorites also have a button in the Pinned row above.
+        if isPinned { spoken.append("pinned") }
         if let mark { spoken.append(mark.spoken) }
         (field as? SpokenTextField)?.spokenText = spoken.joined(separator: ", ")
     }

@@ -195,6 +195,19 @@ The Command-arrow shortcuts are turned off while you're typing in a text field, 
 | Import favorites | Command-Shift-I |
 | Export favorites | Command-Shift-E |
 
+## Pinned stations
+
+Pin up to ten favorites to keep them one step away:
+
+- **iPhone and iPad:** a station's Actions rotor (swipe up or down) and its touch-and-hold menu have **Pin to Top** and **Unpin**. Pinned stations appear as large buttons under a **Pinned** heading at the top of Favorites (VoiceOver's Headings rotor jumps there); double-tap one to play it. The buttons have the same Actions rotor as the list: Remove, Unpin, and Stop and Sleep Timer… on the station that's playing. They fit the screen: two across on an iPhone, more on an iPad or in landscape, one per row at the largest text sizes.
+- **Mac:** Station > Pin to Top (Command-Shift-P), the table's context menu (VO-Shift-M) or VoiceOver actions (VO-Command-Space), or the Pin to Top button. Pinned stations appear as numbered buttons above the table, and **Command-Option-1** to **9**, then **0** for the tenth, play them from anywhere (Controls menu). In the table, VoiceOver adds "pinned" after the name.
+
+Pinned stations stay in the Favorites list too, and their order follows it: move a favorite up or down to reorder the pins. Pins sync through iCloud with your favorites. If ten are already pinned, unpin one first.
+
+## Filtering favorites
+
+The **Filter favorites** field at the top of Favorites narrows the list to stations whose name, country, format or tags contain what you type. While filtering, the Pinned row is hidden and moving favorites is turned off (a place in the filtered list isn't a place in the full one). Clear the field to see everything again.
+
 ## Adding a station by its address
 
 Paste or type the stream address into the Search field and press Return (on iPhone, tap Search). Anything starting with `http://` or `https://` is treated as an address rather than a search. It shows up as the only search result, so you can play it first, then add it to Favorites. On the Mac, File > Add Station (Command-N) jumps to an empty Search field, ready to paste into.
