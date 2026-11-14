@@ -198,7 +198,11 @@ func addTester(email: String, first: String, last: String) {
         "attributes": attrs,
         "relationships": ["betaGroups": ["data": [["type": "betaGroups", "id": groupID]]]],
     ]])
-    print("Added \(email) to the Testers group. TestFlight emails them an invitation once a build is approved.")
+    // Whether the group has an approved build decides when the invitation goes.
+    let approved = platforms.contains { builds(platform: $0.1, limit: 5).contains { $0.external == "BETA_APPROVED" || $0.external == "IN_BETA_TESTING" } }
+    print(approved
+          ? "Added \(email) to the Testers group. TestFlight has emailed them an invitation."
+          : "Added \(email) to the Testers group. TestFlight emails them an invitation once a build is approved.")
 }
 
 func removeTester(email: String) {
