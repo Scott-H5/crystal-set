@@ -138,6 +138,7 @@ Both versions are the same app in App Store Connect, so the iPhone and Mac build
 | `asc.sh add-tester EMAIL [FIRST LAST]` | Adds someone; TestFlight emails them an invitation once a build is approved |
 | `asc.sh remove-tester EMAIL` | Removes someone |
 | `asc.sh link` / `link on [LIMIT]` / `link off` | Shows, turns on (optionally capped at LIMIT testers) or turns off the public link anyone can join with |
+| `asc.sh watch [MINUTES] [--keep]` | Checks every MINUTES (default 5) and tells you when a build's state changes, for example "Mac build 202611140435: approved": printed, as a Mac notification, and by iMessage if `ASC_NOTIFY_IMESSAGE` is set. It stops once nothing is waiting on Apple, unless `--keep`. Leave it running in Terminal when you walk away; Control-C stops it. |
 | `asc.sh submit ios` / `submit mac` (optionally followed by a build number) | Takes the newest build, or the one named, adds the What to Test notes from `testflight-notes.txt`, gives it to the Testers group and sends it to Beta App Review. It waits for Apple to finish processing a fresh upload, and asks before sending. |
 
 A new release is then: `testflight.sh ios`, then `asc.sh submit ios` followed by the build number it printed (and the same with `mac`). Naming the build matters right after an upload: Apple can take a few minutes to list a new build at all, and until then "the newest" is the previous one.
@@ -150,9 +151,10 @@ ASC_ISSUER_ID=…           # the Issuer ID at the top of the keys page
 ASC_KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_….p8"
 ASC_APP_ID=…              # the number in the app's App Store Connect address
 ASC_EXTERNAL_GROUP_ID=…   # the external group's ID, from its address
+ASC_NOTIFY_IMESSAGE=…     # optional: where `watch` sends iMessages
 ```
 
-Nothing about the key is in this project, so it's never committed. `tools/asc.swift` explains how the API is signed and called.
+Nothing about the key is in this project, so it's never committed. The first time `watch` sends an iMessage, macOS asks whether Terminal may control Messages; allow it. `tools/asc.swift` explains how the API is signed and called.
 
 ## Keyboard shortcuts
 

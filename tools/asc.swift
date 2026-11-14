@@ -14,6 +14,11 @@
 //   ./asc.sh link                        show the public link, if it's on
 //   ./asc.sh link on [LIMIT]             turn the public link on (LIMIT testers)
 //   ./asc.sh link off
+//   ./asc.sh watch [MINUTES] [--keep]    check builds every MINUTES (default 5)
+//                                        and tell you when one changes: a Mac
+//                                        notification, and an iMessage if
+//                                        ASC_NOTIFY_IMESSAGE is set. Stops when
+//                                        nothing is waiting, unless --keep.
 //   ./asc.sh submit ios|mac [BUILD]      newest build (or BUILD): add What to Test notes
 //                                        (testflight-notes.txt), add it to the
 //                                        Testers group, send it to Beta App
@@ -76,7 +81,8 @@ func makeToken() -> String {
     let signature = try! key.signature(for: Data("\(part1).\(part2)".utf8))
     return "\(part1).\(part2).\(base64URL(signature.rawRepresentation))"
 }
-let token = makeToken()
+// A fresh token for each request. A token lasts 10 minutes, and `watch`
+// runs for hours, so one made at startup would run out.
 
 // MARK: - Requests
 
@@ -88,7 +94,7 @@ typealias JSON = [String: Any]
 func api(_ method: String, _ path: String, _ body: JSON? = nil) -> JSON {
     var request = URLRequest(url: URL(string: "https://api.appstoreconnect.apple.com" + path)!)
     request.httpMethod = method
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    request.setValue("Bearer \(makeToken())", forHTTPHeaderField: "Authorization")
     if let body {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try! JSONSerialization.data(withJSONObject: body)
@@ -302,6 +308,90 @@ func submit(_ which: String) {
     print("Sent \(name) build \(build.number) to Beta App Review. Apple emails you the result.")
 }
 
+// MARK: - Watching for changes
+
+/// States meaning "Apple still has work to do on this build".
+let pendingStates: Set<String> = [
+    "PROCESSING", "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "MISSING_EXPORT_COMPLIANCE",
+]
+
+/// Every recent build's state, such as ["Mac build 202611140435": "approved"],
+/// plus whether any is still pending.
+func snapshot() -> (states: [String: String], pending: Bool) {
+    var states: [String: String] = [:]
+    var pending = false
+    for (_, code, name) in platforms {
+        for build in builds(platform: code, limit: 5) {
+            let raw = build.processing == "VALID" ? build.external : build.processing
+            states["\(name) build \(build.number)"] = plain(raw)
+            if pendingStates.contains(raw) { pending = true }
+        }
+    }
+    return (states, pending)
+}
+
+/// Runs a short AppleScript, with `arguments` passed in safely (never pasted
+/// into the script text, so no name or message can break it).
+func runAppleScript(_ script: String, _ arguments: [String]) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-e", script] + arguments
+    try? process.run()
+    process.waitUntilExit()
+}
+
+/// Tells you about a change: printed here, as a Mac notification (VoiceOver
+/// announces it), and as an iMessage when ASC_NOTIFY_IMESSAGE is set in
+/// ~/.appstoreconnect/crystal-set.env (an email address or phone number
+/// signed in to iMessage).
+func notify(_ message: String) {
+    let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
+    print("\(time)  \(message)")
+    runAppleScript("""
+        on run argv
+            display notification (item 1 of argv) with title "Crystal Set TestFlight"
+        end run
+        """, [message])
+    if let recipient = env["ASC_NOTIFY_IMESSAGE"], !recipient.isEmpty {
+        // The first time, macOS asks whether Terminal may control Messages.
+        runAppleScript("""
+            on run argv
+                tell application "Messages"
+                    set theService to 1st account whose service type = iMessage
+                    send ("Crystal Set TestFlight: " & item 1 of argv) to participant (item 2 of argv) of theService
+                end tell
+            end run
+            """, [message, recipient])
+    }
+}
+
+/// Checks every few minutes and reports each build whose state changes.
+/// Leave it running in Terminal while you're away; Control-C stops it.
+func watch(_ args: [String]) {
+    let minutes = args.compactMap(Double.init).first ?? 5
+    let keepGoing = args.contains("--keep")
+    var (last, pending) = snapshot()
+    print("Watching \(last.count) builds, every \(minutes.formatted()) minute(s). Control-C stops.")
+    for (build, state) in last.sorted(by: { $0.key < $1.key }) where pendingStates.contains(where: { plain($0) == state }) {
+        print("  \(build): \(state)")
+    }
+    if let recipient = env["ASC_NOTIFY_IMESSAGE"], !recipient.isEmpty {
+        print("Changes will also be sent by iMessage to \(recipient).")
+    }
+    while keepGoing || pending {
+        Thread.sleep(forTimeInterval: minutes * 60)
+        let now = snapshot()
+        for (build, state) in now.states.sorted(by: { $0.key < $1.key }) where last[build] != state {
+            // A build seen for the first time counts as a change too (a new
+            // upload appearing), unless it's already finished and dull.
+            notify("\(build): \(state)")
+        }
+        last = now.states
+        pending = now.pending
+    }
+    notify("Nothing left waiting on Apple.")
+}
+
 // MARK: - Main
 
 let args = Array(CommandLine.arguments.dropFirst()).filter { $0 != "--yes" }
@@ -316,6 +406,7 @@ case "remove-tester":
     removeTester(email: args[1])
 case "link": link(Array(args.dropFirst()))
 case "submit": submit(args.count > 1 ? args[1] : "")
+case "watch": watch(Array(args.dropFirst()))
 default:
     print("""
     Usage:
@@ -325,5 +416,6 @@ default:
       ./asc.sh remove-tester EMAIL
       ./asc.sh link            (or: link on [LIMIT], link off)
       ./asc.sh submit ios|mac [BUILD]
+      ./asc.sh watch [MINUTES] [--keep]
     """)
 }
