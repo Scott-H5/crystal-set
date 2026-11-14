@@ -36,6 +36,11 @@ final class ScreenshotTests: XCTestCase {
             activate(app.tabBars.buttons["Search"])
             shoot("\(name) 3 Search")
 
+            // Search, to show results with their Add buttons.
+            if searchForResults(app) {
+                shoot("\(name) 3b Search results")
+            }
+
             activate(app.tabBars.buttons["Now Playing"])
             sleep(1)
             shoot("\(name) 4 Now Playing")
@@ -48,11 +53,50 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.appearance = .light
     }
 
+    /// Search results at the largest text size, where the Add buttons show
+    /// only their star so the station names keep room.
+    func testSearchResultsAtLargestText() throws {
+        XCUIDevice.shared.appearance = .light
+        let app = XCUIApplication()
+        // As if Larger Text were at its largest, for this app and this run only.
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName",
+                                "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        activate(app.tabBars.buttons["Search"])
+        guard searchForResults(app) else { return }
+        // Scroll the first results up into view.
+        app.swipeUp()
+        sleep(1)
+        shoot("Largest text, search results")
+        app.swipeUp()
+        sleep(1)
+        shoot("Largest text, search results 2")
+        app.terminate()
+    }
+
     private func shoot(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    /// Searches from the Search tab and waits for results. Uses whatever is
+    /// already in the field (the last search), or "jazz" if it's empty.
+    /// False if no results came back (for example, no internet connection).
+    private func searchForResults(_ app: XCUIApplication) -> Bool {
+        let field = app.textFields.firstMatch
+        guard field.waitForExistence(timeout: 5) else { return false }
+        // With VoiceOver on, the first activation sometimes only moves the
+        // VoiceOver cursor, so try a few times until the keyboard is up.
+        for _ in 1...3 where !(field.value(forKey: "hasKeyboardFocus") as? Bool ?? false) {
+            activate(field)
+        }
+        let current = field.value as? String ?? ""
+        let prompt = field.placeholderValue ?? ""
+        // Return in the field starts the search, like the keyboard's Search key.
+        field.typeText(current.isEmpty || current == prompt ? "jazz\n" : "\n")
+        return app.staticTexts["Results"].waitForExistence(timeout: 20)
     }
 
     // Touch, then double-tap if VoiceOver is running (see AccessibilityAuditTests).

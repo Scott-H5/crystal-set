@@ -63,6 +63,12 @@ final class AccessibilityAuditTests: XCTestCase {
         activate(app.tabBars.buttons["Search"])
         try audit(app, screen: "Search (\(size))")
 
+        // Search, so the results and their Add buttons are checked too.
+        // Skipped without internet.
+        if searchForResults(app) {
+            try audit(app, screen: "Search results (\(size))")
+        }
+
         activate(app.tabBars.buttons["Now Playing"])
         try audit(app, screen: "Now Playing (\(size))")
 
@@ -71,6 +77,24 @@ final class AccessibilityAuditTests: XCTestCase {
         if stop.exists && stop.isEnabled { activate(stop) }
 
         report()
+    }
+
+    /// Searches from the Search tab and waits for results. Uses whatever is
+    /// already in the field (the last search), or "jazz" if it's empty.
+    /// False if no results came back (for example, no internet connection).
+    private func searchForResults(_ app: XCUIApplication) -> Bool {
+        let field = app.textFields.firstMatch
+        guard field.waitForExistence(timeout: 5) else { return false }
+        // With VoiceOver on, the first activation sometimes only moves the
+        // VoiceOver cursor, so try a few times until the keyboard is up.
+        for _ in 1...3 where !(field.value(forKey: "hasKeyboardFocus") as? Bool ?? false) {
+            activate(field)
+        }
+        let current = field.value as? String ?? ""
+        let prompt = field.placeholderValue ?? ""
+        // Return in the field starts the search, like the keyboard's Search key.
+        field.typeText(current.isEmpty || current == prompt ? "jazz\n" : "\n")
+        return app.staticTexts["Results"].waitForExistence(timeout: 20)
     }
 
     /// Taps an element the way a person would with VoiceOver on or off.

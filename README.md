@@ -24,6 +24,12 @@ On the Mac:
 - In Search results, stations already in your favorites have a star. VoiceOver reads it as "favorite", so you know whether Command-D will add or remove.
 - The Now Playing bar's Pause/Resume and Stop buttons show the usual playback icons. VoiceOver reads them by name, and hovering the pointer shows the name and shortcut.
 
+On iPhone, without VoiceOver, nothing depends on knowing a gesture:
+
+- Each search result has an **Add** button with a star. After a tap it reads **Saved**, with a filled star; tap it again to take the station off your list. (At the largest text sizes it sits under the station instead of beside it, so the name has room.)
+- The Now Playing tab has an **Add to Favorites** button (or **Remove from Favorites**) for the station that's playing.
+- Swiping left on a station and touching and holding it still work, as shortcuts.
+
 On iPhone, with VoiceOver:
 
 - Double-tap a station to play it.
@@ -31,7 +37,8 @@ On iPhone, with VoiceOver:
 - To tidy up Favorites, tap Edit. Double-tapping a favorite then renames it, and its Actions rotor has Move Up, Move Down and Delete. Each move says the new position, such as "Position 3 of 12". Tap Done when you're finished. Rename is also in a favorite's touch-and-hold menu.
 - Magic Tap (a two-finger double-tap) pauses and resumes from anywhere in the app.
 - The Now Playing bar at the bottom of Favorites and Search pauses or resumes on a double-tap. Its Actions rotor has Stop, Next Station, Previous Station, and Sleep Timer…, which opens a pop-up list of timer lengths. The station that's playing has Stop and Sleep Timer… in its Actions rotor too.
-- The Now Playing tab has the same controls as plain buttons, plus the sleep timer.
+- The Now Playing tab has the same controls as plain buttons, plus Add to Favorites (or Remove from Favorites) and the sleep timer.
+- The search results' visible Add buttons are hidden from VoiceOver, since the Actions rotor already has Add to Favorites; this keeps the results list one stop per station.
 - The Favorites tab's More menu starts with a Sleep Timer submenu, so you can set the timer without leaving your favorites, followed by Import and Export.
 
 ### Checking accessibility automatically

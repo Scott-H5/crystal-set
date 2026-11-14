@@ -242,6 +242,10 @@ struct FavoritesScreen: View {
 
 struct SearchScreen: View {
     @EnvironmentObject private var model: AppModel
+    // Whether the search field has the keyboard. Set to false when a search
+    // starts, so the keyboard goes away and the results can be seen, without
+    // anyone needing to know to swipe it down.
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -251,10 +255,15 @@ struct SearchScreen: View {
                     // inside the empty field says what it accepts.
                     TextField("Search for", text: $model.query,
                               prompt: Text("Name, tag, or stream address"))
+                        // Named outright: with a gray prompt set, iOS left the
+                        // field's own name ("Search for") out of the
+                        // accessibility tree, so the UI tests couldn't find it.
+                        .accessibilityLabel("Search for")
                         .accessibilityHint("A station name or tag, or a stream address starting with http")
                         // The keyboard's Return key says "Search".
                         .submitLabel(.search)
-                        .onSubmit { model.search() }
+                        .focused($fieldFocused)
+                        .onSubmit { startSearch() }
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     Picker("Search by", selection: $model.field) {
@@ -262,7 +271,7 @@ struct SearchScreen: View {
                             Text(field.rawValue).tag(field)
                         }
                     }
-                    Button("Search") { model.search() }
+                    Button("Search") { startSearch() }
                         .disabled(model.isSearching
                                   || model.query.trimmingCharacters(in: .whitespaces).isEmpty)
                 } footer: {
@@ -294,6 +303,12 @@ struct SearchScreen: View {
             .safeAreaInset(edge: .bottom) { MiniPlayer(player: model.player) }
         }
     }
+
+    /// Puts the keyboard away, then searches.
+    private func startSearch() {
+        fieldFocused = false
+        model.search()
+    }
 }
 
 // MARK: - Station row
@@ -302,9 +317,10 @@ struct SearchScreen: View {
 ///
 /// The whole row is one button: double-tap plays the station. Its other
 /// actions are in VoiceOver's Actions rotor, in a context menu (touch and
-/// hold), and as swipe actions. In Edit mode, double-tapping a favorite
-/// renames it instead. (Rename is left out of the Actions rotor on purpose,
-/// to keep that list short.)
+/// hold), and as swipe actions. Search results also show a visible Add
+/// button (FavoriteToggle), since not everyone knows those gestures. In
+/// Edit mode, double-tapping a favorite renames it instead. (Rename is left
+/// out of the Actions rotor on purpose, to keep that list short.)
 struct StationRow: View {
     @EnvironmentObject private var model: AppModel
     let station: Station
@@ -316,6 +332,8 @@ struct StationRow: View {
     @Environment(\.editMode) private var editMode
     // True while VoiceOver is running.
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+    // The Larger Text setting, for the layout at the largest sizes.
+    @Environment(\.dynamicTypeSize) private var textSize
 
     // True in Edit mode on a favorite, when double-tap renames instead of plays.
     private var tapRenames: Bool { inFavorites && editMode?.wrappedValue.isEditing == true }
@@ -327,6 +345,40 @@ struct StationRow: View {
     private var details: String { station.detailLine }
 
     var body: some View {
+        // Side by side normally. At the Accessibility text sizes the Add
+        // button goes under the station instead, so the name gets the whole
+        // width (beside it, names broke after every word).
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        layout {
+            playButton
+            // Search results get a visible Add button, so nobody has to know
+            // about swiping or touching and holding to save a station.
+            if !inFavorites {
+                FavoriteToggle(station: station)
+            }
+        }
+        // Swipe left on the row: Remove, or Add to Favorites.
+        // VoiceOver would normally list a swipe action in the Actions rotor,
+        // but SwiftUI listed it twice ("Remove, Remove, Activate"). So while
+        // VoiceOver is on, the swipe action is left off here and the rotor
+        // list above offers the same action once, with the same name.
+        .swipeActions {
+            if !voiceOverOn {
+                if model.isFavorite(station) {
+                    Button(swipeTitle, role: .destructive) { swipeAction() }
+                } else {
+                    Button(swipeTitle) { swipeAction() }
+                        .tint(.blue)
+                }
+            }
+        }
+    }
+
+    // The main part of the row: the logo, name and details. Tapping it plays
+    // the station (or renames it, in Edit mode).
+    private var playButton: some View {
         Button {
             if tapRenames { model.renamingStation = station } else { model.play(station) }
         } label: {
@@ -398,21 +450,6 @@ struct StationRow: View {
                 Button("Rename…", systemImage: "pencil") { model.renamingStation = station }
             }
         }
-        // Swipe left on the row: Remove, or Add to Favorites.
-        // VoiceOver would normally list a swipe action in the Actions rotor,
-        // but SwiftUI listed it twice ("Remove, Remove, Activate"). So while
-        // VoiceOver is on, the swipe action is left off here and the rotor
-        // list above offers the same action once, with the same name.
-        .swipeActions {
-            if !voiceOverOn {
-                if model.isFavorite(station) {
-                    Button(swipeTitle, role: .destructive) { swipeAction() }
-                } else {
-                    Button(swipeTitle) { swipeAction() }
-                        .tint(.blue)
-                }
-            }
-        }
     }
 
     // The swipe action's name. "Remove", since it takes the station off
@@ -446,6 +483,44 @@ struct StationRow: View {
     private func move(by offset: Int) {
         model.favoriteSelection = station.id
         model.moveSelectedFavorite(by: offset)
+    }
+}
+
+// MARK: - Add button on search results
+
+/// The "Add" button at the end of each search result. It shows a star and a
+/// word, never a symbol alone, so what it does is plain to anyone, including
+/// people who find gestures or unlabeled icons hard to remember. After a tap it
+/// reads "Saved" with a filled star; tapping again takes the station back off
+/// the list.
+///
+/// Who uses it:
+///   - Touch, Voice Control ("Tap Add") and Switch Control: it's an ordinary
+///     button with the words it shows.
+///   - VoiceOver: hidden, because VoiceOver already has Add to Favorites in
+///     the row's Actions rotor, and an extra stop on every row would make the
+///     results list twice as long to swipe through.
+struct FavoriteToggle: View {
+    @EnvironmentObject private var model: AppModel
+    let station: Station
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
+
+    var body: some View {
+        let saved = model.isFavorite(station)
+        Button {
+            if saved { model.removeFromFavorites(station) } else { model.addToFavorites(station) }
+        } label: {
+            // Always the star and the word. (At the largest text sizes the
+            // row puts this button under the station, so there's room.)
+            Label(saved ? "Saved" : "Add", systemImage: saved ? "star.fill" : "star")
+                .labelStyle(.titleAndIcon)
+        }
+        // A bordered button looks like a button, and in a list a non-default
+        // style keeps this tap separate from the row's own (which plays).
+        .buttonStyle(.bordered)
+        .tint(saved ? Color.accessibleTint : .primary)
+        .accessibilityHint(saved ? "Removes this station from Favorites" : "Adds this station to Favorites")
+        .accessibilityHidden(voiceOverOn)
     }
 }
 
@@ -770,6 +845,21 @@ struct NowPlayingScreen: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
+
+            // Save (or unsave) what's playing, in plain words, so nobody has
+            // to know a gesture to do it.
+            if let station = player.station {
+                let saved = model.isFavorite(station)
+                Button {
+                    if saved { model.removeFromFavorites(station) } else { model.addToFavorites(station) }
+                } label: {
+                    Label(saved ? "Remove from Favorites" : "Add to Favorites",
+                          systemImage: saved ? "star.fill" : "star")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
         }
     }
 
