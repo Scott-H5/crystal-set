@@ -138,9 +138,9 @@ Both versions are the same app in App Store Connect, so the iPhone and Mac build
 | `asc.sh add-tester EMAIL [FIRST LAST]` | Adds someone; TestFlight emails them an invitation once a build is approved |
 | `asc.sh remove-tester EMAIL` | Removes someone |
 | `asc.sh link` / `link on [LIMIT]` / `link off` | Shows, turns on (optionally capped at LIMIT testers) or turns off the public link anyone can join with |
-| `asc.sh submit ios` / `submit mac` | Takes the newest build, adds the What to Test notes from `testflight-notes.txt`, gives it to the Testers group and sends it to Beta App Review. It waits for Apple to finish processing a fresh upload, and asks before sending. |
+| `asc.sh submit ios` / `submit mac` (optionally followed by a build number) | Takes the newest build, or the one named, adds the What to Test notes from `testflight-notes.txt`, gives it to the Testers group and sends it to Beta App Review. It waits for Apple to finish processing a fresh upload, and asks before sending. |
 
-A new release is then: `testflight.sh ios`, then `asc.sh submit ios` (and the same with `mac`).
+A new release is then: `testflight.sh ios`, then `asc.sh submit ios` followed by the build number it printed (and the same with `mac`). Naming the build matters right after an upload: Apple can take a few minutes to list a new build at all, and until then "the newest" is the previous one.
 
 It needs an App Store Connect API key, created once under Users and Access > Integrations > App Store Connect API (Team Keys, App Manager role). The key file goes in `~/.appstoreconnect/private_keys/`, readable only by you (`chmod 600`); Apple lets you download it only once, so keep a backup somewhere safe. The key's settings go in `~/.appstoreconnect/crystal-set.env`:
 

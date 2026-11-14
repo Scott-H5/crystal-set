@@ -14,7 +14,7 @@
 //   ./asc.sh link                        show the public link, if it's on
 //   ./asc.sh link on [LIMIT]             turn the public link on (LIMIT testers)
 //   ./asc.sh link off
-//   ./asc.sh submit ios|mac              newest build: add What to Test notes
+//   ./asc.sh submit ios|mac [BUILD]      newest build (or BUILD): add What to Test notes
 //                                        (testflight-notes.txt), add it to the
 //                                        Testers group, send it to Beta App
 //                                        Review. Asks before sending.
@@ -243,17 +243,28 @@ func submit(_ which: String) {
         fail("No What to Test notes: put them in \(notesPath).")
     }
 
+    // Which build: the one named (the number testflight.sh printed), or
+    // else the newest. Naming it matters right after an upload: Apple can
+    // take a few minutes to list a new build at all, and until then "the
+    // newest" is the previous one.
+    let wanted = CommandLine.arguments.dropFirst(3).first { $0 != "--yes" }
+    func find() -> (id: String, number: String, processing: String, external: String)? {
+        let list = builds(platform: code, limit: 10)
+        return wanted.map { number in list.first { $0.number == number } } ?? list.first
+    }
+
     // Apple processes an upload for a few minutes before it can be tested.
-    // Check every 30 seconds, for up to 30 minutes.
-    var newest = builds(platform: code, limit: 1).first
+    // Check every 30 seconds, for up to 30 minutes, until the build is
+    // listed and done processing.
+    var found = find()
     var waited = 0
-    while let build = newest, build.processing == "PROCESSING", waited < 1800 {
-        if waited == 0 { print("\(name) build \(build.number) is still processing; waiting…") }
+    while found == nil || found?.processing == "PROCESSING", waited < 1800 {
+        if waited == 0 { print("Waiting for Apple to finish processing \(name) build \(wanted ?? found?.number ?? "")…") }
         Thread.sleep(forTimeInterval: 30)
         waited += 30
-        newest = builds(platform: code, limit: 1).first
+        found = find()
     }
-    guard let build = newest else { fail("No \(name) builds found.") }
+    guard let build = found else { fail("\(name) build \(wanted ?? "") didn't appear within 30 minutes.") }
     guard build.processing == "VALID" else { fail("\(name) build \(build.number) is \(plain(build.processing)).") }
     guard build.external == "READY_FOR_BETA_SUBMISSION" else {
         fail("\(name) build \(build.number) is \(plain(build.external)), so there's nothing to submit.")
@@ -313,6 +324,6 @@ default:
       ./asc.sh add-tester EMAIL [FIRST LAST]
       ./asc.sh remove-tester EMAIL
       ./asc.sh link            (or: link on [LIMIT], link off)
-      ./asc.sh submit ios|mac
+      ./asc.sh submit ios|mac [BUILD]
     """)
 }

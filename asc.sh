@@ -7,7 +7,7 @@
 #   ./asc.sh add-tester EMAIL [FIRST LAST]
 #   ./asc.sh remove-tester EMAIL
 #   ./asc.sh link                         show the public link (link on [LIMIT], link off)
-#   ./asc.sh submit ios|mac               newest build to Beta App Review (asks first)
+#   ./asc.sh submit ios|mac [BUILD]       newest build, or BUILD, to Beta App Review (asks first)
 #
 # Needs an App Store Connect API key (README: "TestFlight from the
 # terminal"). Its settings live outside the project, in
