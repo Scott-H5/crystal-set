@@ -110,10 +110,16 @@ struct FavoritesView: View {
                     PinnedRow(player: model.player)
                 }
                 // Typing here narrows the table to matching stations.
-                TextField("Filter favorites", text: $model.favoritesFilter,
-                          prompt: Text("Filter by name, country, format or tag"))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($filterFocused)
+                HStack {
+                    TextField("Filter favorites", text: $model.favoritesFilter,
+                              prompt: Text("Filter by name, country, format or tag"))
+                        .textFieldStyle(.roundedBorder)
+                        .focused($filterFocused)
+                    // Empties the field, so the whole list shows again, and
+                    // puts the cursor back in it ready for new text.
+                    ClearButton(fieldName: "Filter favorites",
+                                text: $model.favoritesFilter) { filterFocused = true }
+                }
                 if model.isFilteringFavorites && model.filteredFavorites.isEmpty {
                     Text("No favorites match \u{201C}\(model.favoritesFilter)\u{201D}.")
                         .foregroundStyle(Color.detailText)
@@ -227,6 +233,11 @@ struct SearchView: View {
                     .accessibilityHint("A station name or tag, or a stream address starting with http")
                     .focused($searchFieldFocused)
                     .onSubmit { model.search() }
+                // Empties the field and puts the cursor back in it. The
+                // results stay until the next search, so nothing is lost.
+                ClearButton(fieldName: "Search for", text: $model.query) {
+                    searchFieldFocused = true
+                }
                 // A pop-up button with one choice per SearchField (Tag, Name).
                 Picker("Search by", selection: $model.field) {
                     ForEach(SearchField.allCases) { field in
@@ -411,6 +422,8 @@ struct RenameStationSheet: View {
     let station: Station
     // `@State` is a value this view keeps for itself: what's typed in the field.
     @State private var name = ""
+    // Lets the Clear button put the cursor back in the Name field.
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -421,7 +434,18 @@ struct RenameStationSheet: View {
 
             // A Form lines up the labeled field neatly.
             Form {
-                TextField("Name", text: $name)
+                // The Clear button sits beside the field. LabeledContent
+                // keeps the "Name:" label lined up the way a Form shows it,
+                // and labelsHidden stops the field drawing a second label
+                // (VoiceOver still reads the field as "Name").
+                LabeledContent("Name") {
+                    HStack {
+                        TextField("Name", text: $name)
+                            .labelsHidden()
+                            .focused($nameFocused)
+                        ClearButton(fieldName: "Name", text: $name) { nameFocused = true }
+                    }
+                }
             }
 
             HStack {

@@ -80,6 +80,7 @@ Then rebuild, and the app is back to normal.
 | `Shared/Models.swift` | The app's data and decisions: what a Station is, searching Radio Browser (or looking up a pasted stream address), the favorites list, and the actions (play, add, remove, rename, move, next station, volume). Also `announce(_:)`, which makes VoiceOver speak. |
 | `Shared/Player.swift` | Sound: playing a stream, the playing/paused/stopped status, show titles, the sleep timer, the media keys and Lock Screen controls, and opening playlist links. |
 | `Shared/ImportExport.swift` | Reading and writing favorites as JSON files. |
+| `Shared/ClearButton.swift` | The Clear button beside the Search, Filter and Rename fields. A small reusable view: one piece of code, used in several places. |
 | `macOS/CrystalSetApp.swift` | Where the Mac version starts. Creates the AppModel, opens the window, and defines the menus and keyboard shortcuts. |
 | `macOS/ContentView.swift` | What's in the Mac window: the Favorites and Search tabs, the Now Playing bar, the Rename sheet, and the Import/Export panels. |
 | `macOS/StationTable.swift` | The Mac's two station tables, including the keys and VoiceOver behavior on table rows. |

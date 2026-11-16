@@ -230,7 +230,7 @@ Pinned stations stay in the Favorites list too, and their order follows it: move
 
 ## Filtering favorites
 
-The **Filter favorites** field at the top of Favorites narrows the list to stations whose name, country, format or tags contain what you type. While filtering, the Pinned row is hidden and moving favorites is turned off (a place in the filtered list isn't a place in the full one). Clear the field to see everything again.
+The **Filter favorites** field at the top of Favorites narrows the list to stations whose name, country, format or tags contain what you type. While filtering, the Pinned row is hidden and moving favorites is turned off (a place in the filtered list isn't a place in the full one). Clear the field to see everything again: the **Clear** button beside it does that in one step. The Search field (and, on the Mac, the Rename field) has a Clear button too.
 
 ## Adding a station by its address
 
@@ -301,6 +301,7 @@ New to the code? Start with [How Crystal Set Works](docs/HOW-IT-WORKS.md), a gui
 | `Shared/Models.swift` | Station model, Radio Browser client, app state and actions, VoiceOver announcements (Mac and iPhone) |
 | `Shared/Player.swift` | Playback, stream titles, sleep timer, playlist links, media keys and Now Playing (Mac and iPhone) |
 | `Shared/ImportExport.swift` | Importing and exporting favorites as JSON (Mac and iPhone) |
+| `Shared/ClearButton.swift` | The Clear button beside text fields (Mac and iPhone) |
 | `macOS/CrystalSetApp.swift` | Mac app entry point and menu commands |
 | `macOS/ContentView.swift` | Mac window: Favorites and Search tabs, Now Playing bar, Rename sheet |
 | `macOS/StationTable.swift` | Mac station table: VO-Space, Return, Space and double-click play, Command-Delete, context menu, VoiceOver actions, playing and favorite icons |

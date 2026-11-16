@@ -253,19 +253,33 @@ struct SearchScreen: View {
                 Section {
                     // VoiceOver reads the label "Search for"; the gray prompt
                     // inside the empty field says what it accepts.
-                    TextField("Search for", text: $model.query,
-                              prompt: Text("Name, tag, or stream address"))
-                        // Named outright: with a gray prompt set, iOS left the
-                        // field's own name ("Search for") out of the
-                        // accessibility tree, so the UI tests couldn't find it.
-                        .accessibilityLabel("Search for")
-                        .accessibilityHint("A station name or tag, or a stream address starting with http")
-                        // The keyboard's Return key says "Search".
-                        .submitLabel(.search)
-                        .focused($fieldFocused)
-                        .onSubmit { startSearch() }
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    // The field and its Clear button share one row.
+                    HStack {
+                        TextField("Search for", text: $model.query,
+                                  prompt: Text("Name, tag, or stream address"))
+                            // Named outright: with a gray prompt set, iOS left the
+                            // field's own name ("Search for") out of the
+                            // accessibility tree, so the UI tests couldn't find it.
+                            .accessibilityLabel("Search for")
+                            .accessibilityHint("A station name or tag, or a stream address starting with http")
+                            // The keyboard's Return key says "Search".
+                            .submitLabel(.search)
+                            .focused($fieldFocused)
+                            .onSubmit { startSearch() }
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        // Empties the field and brings the keyboard back for
+                        // new text. The results stay until the next search.
+                        // (The Favorites filter is a system search bar, which
+                        // already has its own Clear Text button.)
+                        ClearButton(fieldName: "Search for", text: $model.query) {
+                            fieldFocused = true
+                        }
+                    }
+                    // Without this, the line under the row started at the
+                    // Clear button (the List lines it up with the last
+                    // control), leaving a short stray line on the right.
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     Picker("Search by", selection: $model.field) {
                         ForEach(SearchField.allCases) { field in
                             Text(field.rawValue).tag(field)
