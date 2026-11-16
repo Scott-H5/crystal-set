@@ -155,6 +155,8 @@ func plain(_ state: String) -> String {
         "EXPIRED": "expired",
         "MISSING_EXPORT_COMPLIANCE": "waiting for the encryption question",
         "PROCESSING_EXCEPTION": "processing failed",
+        // Apple briefly gives a just-processed build no review state.
+        "": "not ready yet",
     ][state] ?? state.lowercased().replacingOccurrences(of: "_", with: " ")
 }
 
@@ -287,10 +289,19 @@ func submit(_ which: String) {
 
     // Apple processes an upload for a few minutes before it can be tested.
     // Check every 30 seconds, for up to 30 minutes, until the build is
-    // listed and done processing.
+    // listed, done processing, and has a review state. That last part
+    // matters: for a minute or so after processing finishes, Apple lists
+    // the build with no review state at all (or still "PROCESSING"), and
+    // submitting then failed with "Mac build ... is , so there's nothing
+    // to submit." (seen 2026-11-16).
+    func notReady(_ build: (id: String, number: String, processing: String, external: String)?) -> Bool {
+        guard let build else { return true }
+        return build.processing == "PROCESSING"
+            || (build.processing == "VALID" && (build.external.isEmpty || build.external == "PROCESSING"))
+    }
     var found = find()
     var waited = 0
-    while found == nil || found?.processing == "PROCESSING", waited < 1800 {
+    while notReady(found), waited < 1800 {
         if waited == 0 { print("Waiting for Apple to finish processing \(name) build \(wanted ?? found?.number ?? "")…") }
         Thread.sleep(forTimeInterval: 30)
         waited += 30
