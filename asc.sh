@@ -7,7 +7,8 @@
 #   ./asc.sh add-tester EMAIL [FIRST LAST]
 #   ./asc.sh remove-tester EMAIL
 #   ./asc.sh link                         show the public link (link on [LIMIT], link off)
-#   ./asc.sh submit ios|mac [BUILD]       newest build, or BUILD, to Beta App Review (asks first)
+#   ./asc.sh submit ios|mac [BUILD]       newest build, or BUILD, to Beta App Review (asks first;
+#                                         warns if the notes haven't changed, --same-notes skips that)
 #   ./asc.sh watch [MINUTES] [--keep]     tell you (Mac notification, iMessage) when a build
 #                                         changes or tester feedback arrives
 #   ./asc.sh feedback [COUNT]             newest tester feedback and crashes, as plain text

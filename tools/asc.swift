@@ -27,7 +27,10 @@
 //   ./asc.sh submit ios|mac [BUILD]      newest build (or BUILD): add What to Test notes
 //                                        (testflight-notes.txt), add it to the
 //                                        Testers group, send it to Beta App
-//                                        Review. Asks before sending.
+//                                        Review. Asks before sending, and
+//                                        warns if the notes are the same as
+//                                        the previous build's (--same-notes
+//                                        sends them anyway).
 //
 // How the API works, in brief: every request carries a "token" that proves
 // it comes from you. The token is a short JSON note ("this is key B3329MRBHS
@@ -266,6 +269,21 @@ func link(_ args: [String]) {
 
 // MARK: - Submitting a build
 
+/// The English What to Test notes of the newest build of a platform, other
+/// than build number `excluding` (the one being submitted), and that
+/// build's number. Nil if there's no such build or it has no notes.
+func previousNotes(platform: String, excluding: String?) -> (number: String, notes: String)? {
+    let list = builds(platform: platform, limit: 5)
+    // Without a build number, the newest build may be the one being
+    // submitted, so compare with the one before it.
+    guard let previous = excluding.map({ number in list.first { $0.number != number } })
+            ?? list.dropFirst().first else { return nil }
+    let localizations = api("GET", "/v1/builds/\(previous.id)/betaBuildLocalizations")["data"] as? [JSON] ?? []
+    guard let english = localizations.first(where: { (attributes($0)["locale"] as? String) == "en-US" }),
+          let notes = attributes(english)["whatsNew"] as? String else { return nil }
+    return (previous.number, notes.trimmingCharacters(in: .whitespacesAndNewlines))
+}
+
 func submit(_ which: String) {
     guard let (_, code, name) = platforms.first(where: { $0.0 == which }) else {
         fail("Say which build: ./asc.sh submit ios   or   ./asc.sh submit mac")
@@ -281,7 +299,24 @@ func submit(_ which: String) {
     // else the newest. Naming it matters right after an upload: Apple can
     // take a few minutes to list a new build at all, and until then "the
     // newest" is the previous one.
-    let wanted = CommandLine.arguments.dropFirst(3).first { $0 != "--yes" }
+    let wanted = CommandLine.arguments.dropFirst(3).first { !$0.hasPrefix("--") }
+
+    // Forgot to update the notes? Compare them with the ones sent with the
+    // previous build, before any waiting, and ask (or, with --yes, stop)
+    // if they're the same. --same-notes sends them anyway.
+    if !CommandLine.arguments.contains("--same-notes"), let previous = previousNotes(platform: code, excluding: wanted),
+       previous.notes == notes {
+        let warning = "The What to Test notes in testflight-notes.txt are the same as for \(name) build \(previous.number)."
+        if CommandLine.arguments.contains("--yes") {
+            fail(warning + " Update them, or add --same-notes to send them anyway.")
+        }
+        print(warning)
+        print("Send them again anyway? Type yes to go ahead: ", terminator: "")
+        guard readLine()?.lowercased() == "yes" else {
+            print("Nothing sent. Update testflight-notes.txt, then run submit again.")
+            return
+        }
+    }
     func find() -> (id: String, number: String, processing: String, external: String)? {
         let list = builds(platform: code, limit: 10)
         return wanted.map { number in list.first { $0.number == number } } ?? list.first
@@ -573,7 +608,7 @@ func watch(_ args: [String]) {
 
 // MARK: - Main
 
-let args = Array(CommandLine.arguments.dropFirst()).filter { $0 != "--yes" }
+let args = Array(CommandLine.arguments.dropFirst()).filter { $0 != "--yes" && $0 != "--same-notes" }
 switch args.first {
 case "status": status()
 case "testers": showTesters()
@@ -595,7 +630,7 @@ default:
       ./asc.sh add-tester EMAIL [FIRST LAST]
       ./asc.sh remove-tester EMAIL
       ./asc.sh link            (or: link on [LIMIT], link off)
-      ./asc.sh submit ios|mac [BUILD]
+      ./asc.sh submit ios|mac [BUILD] [--same-notes]
       ./asc.sh watch [MINUTES] [--keep]
       ./asc.sh feedback [COUNT]
     """)
