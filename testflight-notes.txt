@@ -1,3 +1,10 @@
+New in this build:
+- Search results have an Add button (a star and the word "Add") to save a station to Favorites, and the Now Playing screen has Add to Favorites. No need to know about swiping or touching and holding.
+- The keyboard goes away when a search starts, so the results show right away.
+- Clear buttons beside the text fields.
+- If a station won't connect, the Lock Screen now says so ("Connecting…" or "Not playing") instead of showing it as playing.
+- With the screen off, one press of your AirPods or EarPods on a station that won't connect moves on to the next station. (With the screen off and nothing playing, iOS sends double and triple presses as a single press, so Next and Previous can't get through.)
+
 Please try the controls, how easy the app is to use, and how well it works with accessibility features. For example:
 - Search for stations, play them, and add a few to Favorites.
 - Pause, stop, and skip between stations, from the app, the Lock Screen, headphones, or the Mac's keyboard.
