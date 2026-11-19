@@ -9,6 +9,7 @@ A small, VoiceOver-friendly internet radio app for the Mac and iPhone. It was bu
 - Shows the current show title when the stream sends one
 - Sleep timer (15 to 90 minutes) that fades the sound out over the last 30 seconds
 - Works with the keyboard's media keys, the Lock Screen, and Control Center's Now Playing. Next and Previous step through your favorites, and on AirPods and EarPods a double press is Next and a triple press is Previous
+- When a station won't connect, the Lock Screen says so ("Not playing: the station isn't answering") instead of showing it as playing. With the iPhone's screen off, iOS sends an AirPods press only as Play, never as Next or Previous, while no sound is playing; so on iPhone, one headphone press on a station that has failed, or is still connecting and hasn't played yet, plays the next station right away instead of retrying the dead one. Play in the app still retries.
 - Reconnects on its own when a stream drops or goes silent: five tries over about 40 seconds. It says "Connection lost. Reconnecting" once, then "Reconnected" when sound is back
 - On iPhone, picks the station back up after a phone call, Siri or an alarm, unless you paused it yourself
 

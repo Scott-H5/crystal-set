@@ -52,7 +52,15 @@ final class Player: ObservableObject {
     }
 
     // `private(set)` means other files can read these but only the Player can change them.
-    @Published private(set) var state: State = .stopped
+    @Published private(set) var state: State = .stopped {
+        // On iPhone, stay awake in the background while a stream connects
+        // (see stayAwakeWhileConnecting).
+        didSet {
+            #if os(iOS)
+            stayAwakeWhileConnecting()
+            #endif
+        }
+    }
     // The station playing (or last played), or nil.
     @Published private(set) var station: Station?
     /// Show or song title sent by the stream (ICY metadata), when available.
@@ -117,7 +125,15 @@ final class Player: ObservableObject {
     private var resumeAfterInterruption = false
     // Keeps the interruption watcher alive (see watchForInterruptions).
     private var interruptionObserver: NSObjectProtocol?
+    // The "still working" ticket held while a stream connects (see
+    // stayAwakeWhileConnecting); .invalid when none is held.
+    private var connectingTask: UIBackgroundTaskIdentifier = .invalid
     #endif
+
+    /// Plays the next station. Set by AppModel, which knows the lists; used
+    /// when a headphone press arrives for a station that can't connect
+    /// (see pressCanSkip).
+    var skipToNextStation: (() -> Void)?
 
     init() {
         #if os(iOS)
@@ -634,6 +650,38 @@ final class Player: ObservableObject {
         }
     }
 
+    // MARK: Staying awake while connecting (iPhone)
+
+    #if os(iOS)
+    /// Asks iOS for extra time in the background while a stream connects or
+    /// reconnects, and gives it back once sound plays or the try ends.
+    ///
+    /// Why: iOS lets a radio app run in the background only while sound is
+    /// coming out. While a stream is connecting there's no sound yet, so iOS
+    /// could suspend the app part way. Then the 20-second "no answer" check
+    /// never ran, the Lock Screen kept saying the station was playing, and
+    /// AirPods' double and triple presses (Next and Previous) found an app
+    /// that wasn't listening. A background task asks for up to about 30
+    /// seconds more, enough to connect or to fail and say so.
+    private func stayAwakeWhileConnecting() {
+        if state == .connecting {
+            guard connectingTask == .invalid else { return }
+            connectingTask = UIApplication.shared.beginBackgroundTask(withName: "Connecting") { [weak self] in
+                // Time's up: hand the ticket back, as iOS requires.
+                MainActor.assumeIsolated { self?.endConnectingTask() }
+            }
+        } else {
+            endConnectingTask()
+        }
+    }
+
+    private func endConnectingTask() {
+        guard connectingTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(connectingTask)
+        connectingTask = .invalid
+    }
+    #endif
+
     // MARK: Interruptions (iPhone)
 
     #if os(iOS)
@@ -701,11 +749,17 @@ final class Player: ObservableObject {
     private func setUpRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async { self?.togglePause() }
+            DispatchQueue.main.async {
+                guard let self, !self.pressCanSkip() else { return }
+                self.togglePause()
+            }
             return .success
         }
         center.playCommand.addTarget { [weak self] _ in
-            DispatchQueue.main.async { self?.resume() }
+            DispatchQueue.main.async {
+                guard let self, !self.pressCanSkip() else { return }
+                self.resume()
+            }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
@@ -716,6 +770,44 @@ final class Player: ObservableObject {
             DispatchQueue.main.async { self?.stop() }
             return .success
         }
+    }
+
+    /// On iPhone, a headphone press (Play or Play/Pause) on a dead station
+    /// moves on to the next station instead of retrying it. True if it did.
+    ///
+    /// Why: with the screen off and no sound playing, iOS passes AirPods
+    /// presses to the app only as "Play": a logged test showed one Play for
+    /// a single, double or triple press alike, so the app can't count them.
+    /// Next and Previous never arrive, so you were stuck: each press just
+    /// retried the dead station. (Triode behaves the same; it's iOS.) With
+    /// the screen awake, or from the Lock Screen's buttons, Next and Previous
+    /// work as usual.
+    ///
+    /// Not done: playing a moment of silence on connecting, to make iOS
+    /// treat Crystal Set as playing. It sometimes let Next and Previous
+    /// through, but not reliably, and skipping sometimes stopped working.
+    /// The cost of leaving it out: if the first station you play since
+    /// another app (such as Music) never answers, a press may start that
+    /// app instead, since iOS still counts it as the one playing.
+    ///
+    /// "Dead" means it failed, or is still connecting and hasn't played yet:
+    /// a press then skips right away, without waiting for the 20-second
+    /// give-up (iOS may have paused the app before it could give up at all).
+    /// A press while a station plays still pauses. The app's own buttons
+    /// still retry; only headphones, the Lock Screen and Control Center go
+    /// through here.
+    private func pressCanSkip() -> Bool {
+        #if os(iOS)
+        guard let skipToNextStation else { return false }
+        var failed = false
+        if case .failed = state { failed = true }
+        let stuck = state == .connecting && !hasPlayed
+        guard failed || stuck else { return false }
+        skipToNextStation()
+        return true
+        #else
+        return false
+        #endif
     }
 
     // Tells macOS what's playing, for Control Center's Now Playing.
@@ -729,13 +821,26 @@ final class Player: ObservableObject {
             #endif
             return
         }
-        // Show the show title when there is one, with the station as the "artist".
+        // The title line says what's really happening, so the Lock Screen
+        // (and VoiceOver reading it) never claims a dead station is playing.
+        // Playing: the show title when there is one, else the station.
+        let title: String
+        switch state {
+        case .connecting: title = "Connecting…"
+        case .failed: title = "Not playing: the station isn't answering"
+        case .paused: title = "Paused"
+        default: title = streamTitle.isEmpty ? station.name : streamTitle
+        }
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: streamTitle.isEmpty ? station.name : streamTitle,
+            MPMediaItemPropertyTitle: title,
+            // The station, as the "artist" line.
             MPMediaItemPropertyArtist: station.name,
             MPNowPlayingInfoPropertyIsLiveStream: true,
+            // 1 = playing, 0 = not. The iPhone used to guess this, and could
+            // show a Pause button for a station that had stopped.
+            MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1.0 : 0.0,
         ]
-        if !streamTitle.isEmpty { info[MPMediaItemPropertyAlbumTitle] = station.name }
+        if state == .playing, !streamTitle.isEmpty { info[MPMediaItemPropertyAlbumTitle] = station.name }
         if let artwork {
             // Apple asks for the picture through a function, at whatever size
             // it needs; the logo is small already, so the same one is given.

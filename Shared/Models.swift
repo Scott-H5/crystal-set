@@ -449,6 +449,9 @@ final class AppModel: ObservableObject {
             favoriteSelection = saved.first?.id
         }
         setUpTrackCommands()
+        // A headphone press on a station that won't connect plays the next
+        // one instead (see Player.pressCanSkip).
+        player.skipToNextStation = { [weak self] in self?.playAdjacentFromRemote(+1) }
         startICloudSync()
         fillInStationDetails()
     }
